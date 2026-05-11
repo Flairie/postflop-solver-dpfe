@@ -134,14 +134,11 @@ impl Game for PostFlopGame {
             valids = self.valid_indices_flop.clone()[player].clone();
         }
         
-        let mut new_t = vec![] as Vec<T>;
-        let valid_len = valids.len();
+        let mut new_t = Vec::with_capacity(action_num * valids.len());
 
-        for action in 0..action_num
-        {
-            for valid in valids.clone()
-            {
-                new_t.push(locks[(valid as usize) + action * valid_len]);
+        for action in 0..action_num {
+            for valid in valids.iter() {
+                new_t.push(locks[(valid.clone() as usize) + action * RANGESIZE]);
             }
         }
 
