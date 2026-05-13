@@ -251,13 +251,11 @@ where
             );
         });
 
-        let boni = node.my_boni();
-
         let mut end_range_owned = node.my_end_range(game);
         let mut end_limit_owned = node.my_end_limit(game);
 
-        end_range_owned = game.cut_them_locks(end_range_owned, &boni, player);
-        end_limit_owned = game.cut_them_locks(end_limit_owned, &boni, player);
+        end_range_owned = game.cut_them_locks(end_range_owned, player);
+        end_limit_owned = game.cut_them_locks(end_limit_owned, player);
         
         let mut end_range: &mut [f32] = &mut end_range_owned;
         let mut end_limit: &mut [i8] = &mut end_limit_owned;
