@@ -876,15 +876,13 @@ where
     const VERBOSE: bool = true;
     
     // node-locking
-    let boni = node.my_boni();
-
     let mut lrange_owned = node.my_end_range(game);
     let mut llimit_owned = node.my_end_limit(game);
 
     if lrange_owned.len() > 0
     {
-        lrange_owned = game.cut_them_locks(lrange_owned, &boni, node.player());
-        llimit_owned = game.cut_them_locks(llimit_owned, &boni, node.player());
+        lrange_owned = game.cut_them_locks(lrange_owned, node.player());
+        llimit_owned = game.cut_them_locks(llimit_owned, node.player());
         
         if VERBOSE { println!("apply_locking_strategy: d & r & t length: {} {} {}", dst.len(), lrange_owned.clone().len(), llimit_owned.clone().len()); }
         
