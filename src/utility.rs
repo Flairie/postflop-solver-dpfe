@@ -873,74 +873,41 @@ where
     <T as GamePair>::G: Game<P = T>,
     <T as GamePair>::N: GameNode<P = T>
     {
-    use crate::card::card_pair_to_index;
-    
-    const VERBOSE: bool = false;
+    const VERBOSE: bool = true;
     
     // node-locking
     let boni = node.my_boni();
-    let lrange = node.my_end_range(game);
-    let llimit = node.my_end_limit(game);
 
-    if lrange.len() == 0 {
-        return;
-    }
+    let mut lrange_owned = node.my_end_range(game);
+    let mut llimit_owned = node.my_end_limit(game);
 
-    let num_actions = node.num_actions();
-    
-    // Get the valid hand indices for this player by converting private cards to hand IDs
-    let mut valid_hand_ids: Vec<usize> = Vec::new();
-    if num_actions > 0 {
-        // We need to determine which player this is. 
-        // The ranges are indexed by the hand order in game's private cards
-        // We'll iterate through all possible hands and check which ones are valid (non-zero in lrange)
-        for action in 0..num_actions {
-            for hand_id in 0..RANGESIZE {
-                let idx = action * RANGESIZE + hand_id;
-                // If this position in the uncut range is set (not zero), it's a valid hand
-                // For the first action, collect the valid hand IDs
-                if action == 0 {
-                    // Check if this hand contains board cards - if it does, skip
-                    let (card1, card2) = crate::card::index_to_card_pair(hand_id);
-                    if !boni.contains(&card1) && !boni.contains(&card2) {
-                        valid_hand_ids.push(hand_id);
-                    }
-                }
-            }
-        }
-    }
-
-    // Now iterate through dst using the mapping
-    for action in 0..num_actions {
-        for (hand_index, &hand_id) in valid_hand_ids.iter().enumerate() {
-            let dst_idx = action * valid_hand_ids.len() + hand_index;
-            let range_idx = action * RANGESIZE + hand_id;
-
-            if dst_idx >= dst.len() || range_idx >= lrange.len() || range_idx >= llimit.len() {
-                if VERBOSE {
-                    println!("Index out of bounds: dst_idx={} (max={}), range_idx={} (max={})",
-                        dst_idx, dst.len(), range_idx, lrange.len());
-                }
-                continue;
-            }
-
-            let d = &mut dst[dst_idx];
-            let r = lrange[range_idx];
-            let l = llimit[range_idx];
-
-            if l == 0 {
+    if lrange_owned.len() > 0
+    {
+        lrange_owned = game.cut_them_locks(lrange_owned, &boni, node.player());
+        llimit_owned = game.cut_them_locks(llimit_owned, &boni, node.player());
+        
+        if VERBOSE { println!("apply_locking_strategy: d & r & t length: {} {} {}", dst.len(), lrange_owned.clone().len(), llimit_owned.clone().len()); }
+        
+        let lrange: &mut [f32] = &mut lrange_owned;
+        let llimit: &mut [i8] = &mut llimit_owned;
+        
+        dst.iter_mut().zip(lrange).zip(llimit).map(|((d, r), l)| (d, r, l)).for_each(|(d, r, l)| {
+            if *l == 0
+            {
                 if VERBOSE { println!("strict ranging detected"); }
-                *d = r;
-            } else if l == -1 {
-                if VERBOSE { println!("underranging detected"); }
-                if *d > r {
-                    *d = r;
-                }
-            } else if l == 1 {
-                if *d < r {
-                    *d = r;
-                }
+
+                *d = *r;
             }
-        }
+            else if *l == -1
+            {
+                if VERBOSE { println!("underranging detected"); }
+
+                if *d > *r {*d = *r;}
+            }
+            else if *l == 1
+            {
+                if *d < *r {*d = *r;}
+            }
+        });
     }
 }
