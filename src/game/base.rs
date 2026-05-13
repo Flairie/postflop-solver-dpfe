@@ -1520,7 +1520,7 @@ impl PostFlopGame {
 
 fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame, p_actions: Vec<PackagedAction>)
 {
-    const VERBOSE: bool = true;
+    const VERBOSE: bool = false;
 
     if VERBOSE { println!("push_nodelocks: Starting packing it up!"); }
 
@@ -1613,7 +1613,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
     
     fn apply_range (p_actions: PackagedAction, mut end_range: [f32; RANGESIZE], mut end_limit: [i8; RANGESIZE]) -> ([f32; RANGESIZE], [i8; RANGESIZE])
     {
-        const VERBOSE: bool = false;
+        const VERBOSE: bool = true;
         const RANGEEMPTY: [f32; 13*13] = [0.0; 13*13];
 
         if !p_actions.lock_range.is_none() 
