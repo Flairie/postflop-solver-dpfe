@@ -121,7 +121,7 @@ impl Game for PostFlopGame {
 
         for action in 0..action_num {
             for pair in pairs.iter() {
-                new_t.push(locks[(valid.clone() as usize) + action * RANGESIZE]);
+                new_t.push(locks[(pair.clone() as usize) + action * RANGESIZE]);
             }
         }
 
