@@ -110,34 +110,17 @@ impl Game for PostFlopGame {
     }
 
     
-    fn cut_them_locks<T>(&self, locks: Vec<T>, boni: &Vec<u8>, player: usize) -> Vec<T> 
+    fn cut_them_locks<T>(&self, locks: Vec<T>, player: usize) -> Vec<T> 
     where
         T: Copy
     {
-        let valids;
+        let pairs: Vec<usize> = self.private_cards[player].iter().map(|&(c1, c2)| card_pair_to_index(c1, c2)).collect();
         let action_num = locks.len() / RANGESIZE;
-
-        if boni.len() > 2
-        {
-            panic!("What the flip! What cards are you adding here?! The board is full!")
-        }
-        else if boni.len() == 2
-        {
-            valids = self.valid_indices_river[card_pair_to_index(boni[0], boni[1])][player].clone();
-        }
-        else if boni.len() == 1
-        {
-            valids = self.valid_indices_turn[boni[0] as usize][player].clone();
-        }
-        else
-        {
-            valids = self.valid_indices_flop.clone()[player].clone();
-        }
         
-        let mut new_t = Vec::with_capacity(action_num * valids.len());
+        let mut new_t = Vec::with_capacity(action_num * pairs.len());
 
         for action in 0..action_num {
-            for valid in valids.iter() {
+            for pair in pairs.iter() {
                 new_t.push(locks[(valid.clone() as usize) + action * RANGESIZE]);
             }
         }
@@ -1537,7 +1520,7 @@ impl PostFlopGame {
 
 fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame, p_actions: Vec<PackagedAction>)
 {
-    const VERBOSE: bool = false;
+    const VERBOSE: bool = true;
 
     if VERBOSE { println!("push_nodelocks: Starting packing it up!"); }
 
@@ -1630,7 +1613,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
     
     fn apply_range (p_actions: PackagedAction, mut end_range: [f32; RANGESIZE], mut end_limit: [i8; RANGESIZE]) -> ([f32; RANGESIZE], [i8; RANGESIZE])
     {
-        const VERBOSE: bool = true;
+        const VERBOSE: bool = false;
         const RANGEEMPTY: [f32; 13*13] = [0.0; 13*13];
 
         if !p_actions.lock_range.is_none() 
