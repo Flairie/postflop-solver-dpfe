@@ -75,7 +75,7 @@ pub trait Game: Send + Sync {
 
     /// Cuts out nodelocking unused cards for postflopgame.
     #[doc(hidden)]
-    fn cut_them_locks<T>(&self, locks: Vec<T>, boni: &Vec<u8>, player: usize) -> Vec<T> where T: Copy;
+    fn cut_them_locks<T>(&self, locks: Vec<T>, player: usize) -> Vec<T> where T: Copy;
 }
 
 /// The trait representing a node in game tree.
