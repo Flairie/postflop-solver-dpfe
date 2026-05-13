@@ -1537,7 +1537,7 @@ impl PostFlopGame {
 
 fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame, p_actions: Vec<PackagedAction>)
 {
-    const VERBOSE: bool = false;
+    const VERBOSE: bool = true;
 
     if VERBOSE { println!("push_nodelocks: Starting packing it up!"); }
 
@@ -1630,7 +1630,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
     
     fn apply_range (p_actions: PackagedAction, mut end_range: [f32; RANGESIZE], mut end_limit: [i8; RANGESIZE]) -> ([f32; RANGESIZE], [i8; RANGESIZE])
     {
-        const VERBOSE: bool = true;
+        const VERBOSE: bool = false;
         const RANGEEMPTY: [f32; 13*13] = [0.0; 13*13];
 
         if !p_actions.lock_range.is_none() 
@@ -1657,8 +1657,8 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                         }
                         else
                         {
-                            let card1 = i * 4 + suit_i;
-                            let card2 = j * 4 + suit_j;
+                            let card1 = (12 - i) * 4 + suit_i;
+                            let card2 = (12 - j) * 4 + suit_j;
 
                             if VERBOSE {println!("apply_range: offsuit: card1: {:?}, card2: {:?}", card1, card2);}
 
@@ -1672,8 +1672,8 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                 {
                     for suit in 0..4
                     {
-                        let card1 = i * 4 + suit;
-                        let card2 = j * 4 + suit;
+                        let card1 = (12 - i) * 4 + suit;
+                        let card2 = (12 - j) * 4 + suit;
 
                         if VERBOSE {println!("apply_range: suited: card1: {:?}, card2: {:?}", card1, card2);}
                         
@@ -1694,8 +1694,8 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                         }
                         else
                         {
-                            let card1 = i * 4 + suit_i;
-                            let card2 = j * 4 + suit_j;
+                            let card1 = (12 - i) * 4 + suit_i;
+                            let card2 = (12 - j) * 4 + suit_j;
 
                             if VERBOSE {println!("apply_range: pair: card1: {:?}, card2: {:?}", card1, card2);}
 
