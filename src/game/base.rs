@@ -4,6 +4,7 @@ use crate::interface::*;
 use crate::utility::*;
 use crate::card::*;
 use std::mem::{self, MaybeUninit};
+use std::u8;
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -1520,7 +1521,7 @@ impl PostFlopGame {
 
 fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame, p_actions: Vec<PackagedAction>)
 {
-    const VERBOSE: bool = false;
+    const VERBOSE: bool = true;
 
     if VERBOSE { println!("push_nodelocks: Starting packing it up!"); }
 
@@ -1544,8 +1545,74 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
 
         packaged_action.sort_rules();
 
-        // THIS IS PROVISIONAL FOR NOW. RULELOCKING WILL BE ADDED HERE.
-        (end_range, end_limit) = apply_range(packaged_action, end_range, end_limit);
+
+        if packaged_action.lock_rules.is_some() && packaged_action.lock_rules.as_ref().unwrap().len() > 0
+        {
+            let rule_num = packaged_action.lock_rules.as_ref().unwrap().len();
+            let rules = packaged_action.lock_rules.as_ref().unwrap().clone();
+
+            let mut board = vec![];
+            board.extend(game.card_config.flop);
+            if node.turn  != u8::MAX {board.push(node.turn );}
+            if node.river != u8::MAX {board.push(node.river);}
+
+            if rules[0].priority > 0
+            {
+                (end_range, end_limit) = apply_range(packaged_action.clone(), end_range, end_limit, [true; RANGESIZE]);
+            }
+
+            let mut rulepack: Vec<RuleLock> = vec![];
+            let mut trvthgrid: [bool; RANGESIZE] = [true; RANGESIZE];
+
+            for i in 0..rule_num
+            {
+                rulepack.push(rules[i].clone());
+
+                if i != rule_num - 1 && rules[i + 1].priority == rules[i].priority
+                {
+                    continue
+                }
+                else
+                {
+                    for r in rulepack.iter()
+                    {
+                        let thisgrid = get_trvth_grid(r, &board);
+                        
+                        trvthgrid = trvthgrid.iter().zip(&thisgrid).map(|(&x, &y)| x && y).collect::<Vec<bool>>().try_into().expect("this is literally not going to happen ever");
+                    }
+                }
+
+                if rules[i].priority == 0
+                {
+                    (end_range, end_limit) = apply_range(packaged_action.clone(), end_range, end_limit, trvthgrid);
+                }
+                else
+                {
+                    for i in 0..RANGESIZE
+                    {
+                        if trvthgrid[i] == true
+                        {
+                            end_range[i] = rules[i].percentage;
+                            end_limit[i] = rules[i].limitation;
+                        }
+                    }
+                }
+
+
+                rulepack.clear();
+                trvthgrid = [true; RANGESIZE];
+
+                if i != rule_num-1 && rules[i].priority < 0 && rules[i + 1].priority == rules[i].priority
+                {
+                    (end_range, end_limit) = apply_range(packaged_action.clone(), end_range, end_limit, [true; RANGESIZE]);
+                }
+            }
+        }
+        else
+        {
+            (end_range, end_limit) = apply_range(packaged_action.clone(), end_range, end_limit, [true; RANGESIZE]);
+        }
+        
 
 
         let mut hasher: DefaultHasher;
@@ -1611,9 +1678,9 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
     
     if VERBOSE { println!("push_nodelocks: Finished here"); }
     
-    fn apply_range (p_actions: PackagedAction, mut end_range: [f32; RANGESIZE], mut end_limit: [i8; RANGESIZE]) -> ([f32; RANGESIZE], [i8; RANGESIZE])
+    fn apply_range (p_actions: PackagedAction, mut end_range: [f32; RANGESIZE], mut end_limit: [i8; RANGESIZE], trvthgrid: [bool; RANGESIZE]) -> ([f32; RANGESIZE], [i8; RANGESIZE])
     {
-        const VERBOSE: bool = true;
+        const VERBOSE: bool = false;
         const RANGEEMPTY: [f32; 13*13] = [0.0; 13*13];
 
         if !p_actions.lock_range.is_none() 
@@ -1646,8 +1713,11 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                             if VERBOSE {println!("apply_range: offsuit: card1: {:?}, card2: {:?}", card1, card2);}
 
                             let index = card_pair_to_index(card1 as Card, card2 as Card);
-                            end_range[index] = lock_range[i * 13 + j];
-                            end_limit[index] = lock_limit[i * 13 + j];
+                            if trvthgrid[index] == true
+                            {
+                                end_range[index] = lock_range[i * 13 + j];
+                                end_limit[index] = lock_limit[i * 13 + j];
+                            }
                         }
                     }}
                 } 
@@ -1661,8 +1731,11 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                         if VERBOSE {println!("apply_range: suited: card1: {:?}, card2: {:?}", card1, card2);}
                         
                         let index = card_pair_to_index(card1 as Card, card2 as Card);
-                        end_range[index] = lock_range[i * 13 + j];
-                        end_limit[index] = lock_limit[i * 13 + j];
+                        if trvthgrid[index] == true
+                        {
+                            end_range[index] = lock_range[i * 13 + j];
+                            end_limit[index] = lock_limit[i * 13 + j];
+                        }
                     }
                 }
                 else
@@ -1683,8 +1756,11 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                             if VERBOSE {println!("apply_range: pair: card1: {:?}, card2: {:?}", card1, card2);}
 
                             let index = card_pair_to_index(card1 as Card, card2 as Card);
-                            end_range[index] = lock_range[i * 13 + j];
-                            end_limit[index] = lock_limit[i * 13 + j];
+                            if trvthgrid[index] == true
+                            {
+                                end_range[index] = lock_range[i * 13 + j];
+                                end_limit[index] = lock_limit[i * 13 + j];
+                            }
                         }
                     }}
                 }
@@ -1700,14 +1776,890 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
 
         (end_range, end_limit)
     }
+
+    fn get_trvth_grid (lock: &RuleLock, board: &Vec<Card>) -> [bool; RANGESIZE]
+    {
+        const VERBOSE: bool = false;
+
+        let rule_type = lock.rule_type;
+        let mut trvthgrid: [bool; RANGESIZE] = [false; RANGESIZE];
+
+        for i in 0..RANGESIZE
+        {
+            if rule_type.0 == 0 // hand class processing
+
+            {
+                let data = evaluate_class(&index_to_card_pair(i));
+
+                if rule_type.1 == data
+                {
+                    trvthgrid[i] = true;
+                }
+            }
+
+            else if rule_type.0 == 1 // hand rank
+
+            {
+                let hand = index_to_card_pair(i);
+                let rank: u8;
+                
+                if hand.0 > hand.1 // should always be true but im paranoid
+                {
+                    rank = hand.0
+                }
+                else
+                {
+                    rank = hand.1
+                }
+
+                if rule_type.1 == 0 && rank < rule_type.1
+                {
+                    trvthgrid[i] = true;
+                }
+                else if rule_type.1 == 1 && rank == rule_type.1
+                {
+                    trvthgrid[i] = true;
+                }
+                else if rule_type.1 == 2 && rank > rule_type.1
+                {
+                    trvthgrid[i] = true;
+                }
+                
+            }
+
+            else if rule_type.0 == 2 || rule_type.0 == 3 // made hand processing
+
+            {
+                let data = evaluate_rank(&index_to_card_pair(i), board);
+
+                const IS_MANUAL: [bool; 10] = [true, true, false, true, true, true, false, false, false, false]; // gahh
+                
+                if rule_type.0 == 3 && data.0 > rule_type.1
+                {
+                    trvthgrid[i] = true;
+                    continue;
+                }
+
+                if rule_type.1 == data.0
+                {
+                    if IS_MANUAL[data.0 as usize] // manual
+                    {
+                        if rule_type.2 == 0
+                        {
+                            trvthgrid[i] = true;
+                        }
+                        else
+                        {
+                            if rule_type.0 == 3 && data.1 < rule_type.2 // they just rank in the opposite order
+                            {
+                                trvthgrid[i] = true;
+                            }
+                            else
+                            {
+                                trvthgrid[i] = data.1 == rule_type.2;
+                            }
+                        }
+                    }
+                    else if rule_type.1 == 3 && data.0 == 3 // autotrue
+                    {
+                        trvthgrid[i] = true;
+                    }
+                }
+                
+                
+            }
+            else if rule_type.0 == 3
+
+            {
+                // draw processing
+            }
+
+            else if rule_type.0 == 4
+
+            {
+                // board texture processing
+            }
+        }
+
+        trvthgrid
+    }
+
+
 }
 
-// hand eval
-
-fn evaluate_rank (hand: (Card, Card), board: Vec<Card>)
+/// made hand eval
+fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
 {
     let mut cards = vec![hand.0, hand.1];
     cards.extend(board);
+
+    let board_sorted = {
+        let mut tmp = board.clone();
+        tmp.sort_unstable_by(|a, b| b.cmp(&a));
+        tmp
+    }; // hypothetically it should be kinda sorted but without sorts it all is going to implode so can't risk it
+
+    let ret: (u8, u8); // hand type, related data
+
+    let repeats_data = evaluate_repeats(hand, &board_sorted);
+    let straight_data = evaluate_straight(hand, &board_sorted);
+    let flush_data = evaluate_flush(hand, &board_sorted);
+
+    let is_straight_flush = humble_straight_flush(hand, &board_sorted); // who cares about straight flush ranks, also just in case you can't check for straight flushes with the other functions as you having straight and flush doesn't necessarily mean you have a straight flush
+
+    if repeats_data.0 == 1 // pair
+    {
+        ret = (1, repeats_data.1);
+    }
+    else if repeats_data.0 == 2 // two pair
+    {
+        ret = (2, repeats_data.1);
+    }
+    else if repeats_data.0 == 3 // three of a kind, trips
+    {
+        ret = (3, repeats_data.1);
+    }
+    else if repeats_data.0 == 4 // set
+    {
+        ret = (4, repeats_data.1);
+    }
+    else if straight_data.0 != 0 // straight, obviously
+    {
+        ret = (4, straight_data.1);
+    }
+    else if flush_data.0 == true // flush, obviously
+    {
+        ret = (5, flush_data.1);
+    }
+    else if repeats_data.0 == 5 // full house
+    {
+        ret = (6, repeats_data.1);
+    }
+    else if repeats_data.0 == 6 // four of a kind
+    {
+        ret = (7, repeats_data.1);
+    }
+    else if is_straight_flush
+    {
+        ret = (8, u8::MAX); // max for the sake of flex
+    }
+    else // brokie high card T_T
+    {
+        ret = (0, evaluate_brokie(hand, &board_sorted));
+    }
+    
+    // FUNCS     
+    
+    /// high card evaluator
+    fn evaluate_brokie (hand: &(Card, Card), board: &Vec<Card>) -> u8
+    {
+        let mut cards = vec![hand.0, hand.1];
+        cards.extend(board);
+
+        let board_deranked = derank(board);
+
+        let mut ret: u8 = 1; // how top is the high card
+
+        let topcard = if hand.0 > hand.1 { hand.0 >> 2 } else { hand.1 >> 2 };
+
+        for checkrank in (0..13).rev()
+        {
+            if board_deranked.contains(&checkrank)
+            {
+                continue;
+            }
+            
+            if topcard == checkrank
+            {
+                break;
+            }
+
+            ret += 1;
+
+            if ret == 3
+            {
+                break;
+            }
+        }
+
+        ret
+    }
+
+
+    fn evaluate_repeats (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
+    {
+        let mut cards = vec![hand.0, hand.1];
+        cards.extend(board);
+
+        let mut rank_counts = [0 as u8; 13];
+        let mut return_data = (0, u8::MAX); // hand type, related data
+
+        for &card in &cards
+        {
+            let rank = card >> 2;
+            rank_counts[rank as usize] += 1;
+        }
+
+        let mut pair_counter: u8 = 0;
+        let mut trip_counter: u8 = 0;
+        let mut quad_counter: u8 = 0; // purely for good looking code, can't get over 1
+
+        let mut pair_rank: u8 = u8::MAX; // for one pair calculations
+        let mut trip_rank: u8 = u8::MAX; // for trip vs set calculations
+
+        for rank in 0..13
+        {
+            if rank_counts[rank] == 2
+            {
+                pair_counter += 1;
+                pair_rank = rank as u8;
+            }
+            else if rank_counts[rank] == 3
+            {
+                trip_counter += 1;
+                trip_rank = rank as u8;
+            }
+            else if rank_counts[rank] == 4
+            {
+                quad_counter += 1;
+            }
+        }
+        
+        if pair_counter == 1 && trip_counter == 0 && quad_counter == 0
+        {
+            return_data.0 = 1; // one pair
+
+            if hand.0 >> 2 != pair_rank && hand.1 >> 2 != pair_rank
+            {
+                return_data.1 = u8::MAX; // board pair, get out of here
+            }
+            else if pair_rank > board[0] >> 2
+            {
+                return_data.1 = 1; // overpair
+            }
+            else if pair_rank == board[0] >> 2
+            {
+                return_data.1 = 2; // top pair
+            }
+            else if pair_rank == board[1] >> 2
+            {
+                return_data.1 = 3; // second pair (or second underpair)
+            }
+            else
+            {
+                return_data.1 = 4; // weak pair
+            }
+
+
+        }
+        else if pair_counter == 2 && trip_counter == 0 && quad_counter == 0
+        {
+            return_data.0 = 2; // two pair
+        }
+        else if pair_counter == 0 && trip_counter == 1 && quad_counter == 0
+        {
+            if hand.0 >> 2 != trip_rank && hand.1 >> 2 != trip_rank
+            {
+                return_data.0 = 3; // three of a kind
+                return_data.1 = 0; // L board trip
+            }
+            else if hand.0 >> 2 == trip_rank && hand.1 >> 2 == trip_rank
+            {
+                return_data.0 = 4; // set, yeah we treat them differently
+
+                if trip_rank == board[0] >> 2
+                {
+                    return_data.1 = 1; // top set
+                }
+                else if trip_rank == board[1] >> 2
+                {
+                    return_data.1 = 2; // second set 
+                }
+                else
+                {
+                    return_data.1 = 3; // low set
+                }
+            }
+            else
+            {
+                return_data.0 = 3; // three of a kind
+                return_data.1 = 1; // trip
+            }
+        }
+        else if (pair_counter == 1 && trip_counter == 1) || trip_counter == 2
+        {
+            return_data.0 = 5; // full house
+        }
+        else if pair_counter == 0 && trip_counter == 0 && quad_counter == 1
+        {
+            return_data.0 = 6; // four of a kind
+        }
+
+        return_data
+    }
+
+
+    fn evaluate_straight(hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
+    {
+        let mut cards = vec![hand.0, hand.1];
+        cards.extend(board);
+        cards.sort_unstable_by(|a, b| a.cmp(&b)); // ascending order because can override stuff for free
+
+        let cards_deranked = derank(&cards);
+        let board_deranked = derank(&board);
+
+        let mut result: (u8, u8) = (0, 0);
+
+        let mut straight_counter: u8 = 0;
+        let mut straight_height: u8 = 0;
+
+        // to wheel some wheels
+        if (cards_deranked[cards_deranked.len() - 1] == 12) && (cards_deranked[0] == 0)
+        {
+            straight_counter = 1;
+        }
+
+        for i in 1..cards_deranked.len()
+        {
+            if cards_deranked[i] - cards_deranked[i-1] == 1
+            {
+                straight_counter += 1;
+                straight_height = cards_deranked[i];
+            }
+            else if cards_deranked[i] == cards_deranked[i-1]
+            {
+                continue;
+            }
+            else
+            {
+                straight_counter = 0;
+            }
+        }
+
+        if straight_counter < 5
+        {
+            result.0 = 0;
+            result.1 = 0;
+
+            return result;
+        }
+        else 
+        {
+            result.0 = straight_height;
+        }
+
+        // check for other possible more nutted straights
+        let mut straight_counter_2: u8 = 0;
+        let mut straight_height_2: u8 = 0;
+
+        let mut straight_1: u8 = 0;
+        let mut straight_2: u8 = 0;
+
+        let mut gap_data: Vec<u8> = vec![];
+
+        if (cards_deranked[cards_deranked.len() - 1] == 12) && (cards_deranked[0] == 0)
+        {
+            straight_counter_2 = 1;
+            gap_data.push(0);
+        }
+
+        for i in 1..board_deranked.len()
+        {
+            // difference stuff
+            let difference = board_deranked[i] - board_deranked[i-1];
+            if gap_data.len() == 5
+            {
+                gap_data.remove(0);
+            }
+            gap_data.push(difference as u8);
+
+
+            // board measures
+            if board_deranked[i] - board_deranked[i-1] == 1
+            {
+                straight_counter_2 += 1;
+                straight_height_2 = board_deranked[i];
+            }
+            else if cards_deranked[i] == cards_deranked[i-1]
+            {
+                continue;
+            }
+            else
+            {
+                let mut sum: u8 = gap_data.iter().sum();
+                
+                while sum > 2
+                {
+                    sum -= gap_data[0];
+                    gap_data.remove(0);
+
+                    straight_counter_2 -= 1;
+                }
+            }
+
+            if straight_counter_2 >= 5
+            {
+                straight_2 = straight_1;
+                straight_1 = straight_height_2;
+            }
+        }
+
+        let sum: u8 = gap_data.iter().sum();
+
+        // extending upwards if possible
+        if straight_counter_2 >= 3 && sum == 0 && straight_height_2 < 11
+        {
+            straight_2 = straight_1;
+            straight_1 = straight_height_2 + 2;
+        }
+        else if straight_counter_2 >= 4 && sum < 2 && straight_height_2 < 12
+        {
+            straight_2 = straight_1;
+            straight_1 = straight_height_2 + 1;
+        }
+
+        // or broadway
+        else if straight_counter_2 == 3 && sum <= 1 && straight_height_2 == 11
+        {
+            straight_2 = straight_1;
+            straight_1 = 12;
+        }
+
+
+        // returning shit
+
+        if straight_height == straight_1
+        {
+            result.1 = 2;
+        }
+        else if straight_height_2 == straight_2
+        {
+            result.1 = 1;
+        }
+        else
+        {
+            result.1 = 0;
+        }
+
+        result
+    }
+
+    fn evaluate_flush (hand: &(Card, Card), board: &Vec<Card>) -> (bool, u8)
+    {
+        let mut cards = vec![hand.0, hand.1];
+        cards.extend(board);
+
+        let mut suit_counts = [0; 4];
+        let mut return_data = (false, 0); // is flush, rank of flush, kicker rank
+        let mut is_flush = false;
+        let mut flush_suit: u8 = u8::MAX;
+
+        for &card in &cards
+        {
+            let suit = card % 4;
+            suit_counts[suit as usize] += 1;
+
+            if suit_counts[suit as usize] == 5
+            {
+                is_flush = true;
+                flush_suit = suit;
+            }
+        }
+
+        if !is_flush
+        {
+            return return_data;
+        }
+        else
+        {
+            return_data.0 = true;
+        }
+
+        let mut topcard: u8 = u8::MAX;
+
+        if (hand.0 % 4 == flush_suit) && (hand.1 % 4 == flush_suit)
+        {
+            if hand.0 > hand.1 
+            {
+                topcard = hand.0 >> 2;
+            }
+            else
+            {
+                topcard = hand.1 >> 2;
+            }
+        }
+        else if hand.0 % 4 == flush_suit
+        {
+            topcard = hand.0 >> 2;
+        }
+        else if hand.1 % 4 == flush_suit
+        {
+            topcard = hand.1 >> 2;
+        }
+
+        let mut nuttiness: u8 = 1;
+        for checkrank in (0..13).rev()
+        {
+            let checkcard = checkrank << 2 + flush_suit;
+
+            if board.contains(&checkcard)
+            {
+                continue;
+            }
+            
+            if topcard == checkrank
+            {
+                return_data.1 = nuttiness;
+                break;
+            }
+
+            nuttiness += 1;
+
+            if nuttiness == 3
+            {
+                break;
+            }
+        }
+
+        return_data
+    }
+
+    fn humble_straight_flush (hand: &(Card, Card), board: &Vec<Card>) -> bool
+    {
+        let mut cards = vec![hand.0, hand.1];
+        cards.extend(board);
+        cards.sort_unstable_by(|a, b| b.cmp(&a)); // this is definitely not sorted
+
+        let mut suit_line: u8 = 0;
+        let mut line_suit: u8 = u8::MAX;
+        let mut last_rank: u8 = u8::MAX;
+
+        for card in cards
+        {
+            let suit = card % 4;
+            let rank = card >> 2;
+
+            if line_suit == suit && last_rank == rank + 1
+            {
+                suit_line += 1;
+                last_rank = rank;
+
+                if suit_line == 5
+                {
+                    return true;
+                }
+            }
+            else if last_rank == rank
+            {
+                continue;
+            }
+            else
+            {
+                line_suit = suit;
+                last_rank = rank;
+                suit_line = 0;
+            }
+        }
+
+        return false;
+    }
+
+    ret
 }
 
-// fn evaluate_flush
+/// pocket cards eval
+fn evaluate_class (hand: &(Card, Card)) -> u8
+{
+    let rank1 = hand.0 >> 2;
+    let rank2 = hand.1 >> 2;
+    let suit1 = hand.0 % 4;
+    let suit2 = hand.1 % 4;
+    
+    if rank1 == rank2
+    {
+        0
+    }
+    else if suit1 == suit2
+    {
+        1
+    }
+    else
+    {
+        2
+    }
+}
+
+
+/// draw eval
+fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 4], [bool; 4])
+{
+    let mut cards = vec![hand.0, hand.1];
+    cards.extend(board);
+
+    let board_sorted = {
+        let mut tmp = board.clone();
+        tmp.sort_unstable_by(|a, b| b.cmp(&a));
+        tmp
+    };
+
+    let mut presence: [bool; 4] = [false, false, false, false]; // overcards, gutshot, open ended, flush draw present
+    let mut bothhole: [bool; 4] = [false, false, false, false]; // same but for if both hole cards are used
+
+    let rank = evaluate_rank(hand, &board_sorted);
+
+    let over_data = eval_overcards(hand, &board_sorted);
+    let gtsh_data = eval_gutshot(hand, &board_sorted);
+    let oesd_data = eval_oesd(hand, &board_sorted);
+    let fdrw_data = eval_fdraw(hand, &board_sorted);
+
+    if rank.0 < 3 // two pair or less
+    {
+        presence[0] = over_data.0;
+        bothhole[0] = over_data.1;
+    }
+    if rank.0 < 5 // no straight
+    {
+        if oesd_data.0
+        {
+            presence[2] = oesd_data.0;
+            bothhole[2] = oesd_data.1;
+        }
+        else
+        {
+            presence[1] = gtsh_data.0;
+            bothhole[1] = gtsh_data.1;
+        }
+    }
+    if rank.0 < 6 // no flush
+    {
+        presence[3] = fdrw_data.0;
+        bothhole[3] = fdrw_data.1;
+    }
+
+    // FUNCS
+    
+    fn eval_overcards (hand: &(Card, Card), board: &Vec<Card>) -> (bool, bool)
+    {
+        let mut ret: (bool, bool) = (false, false); // overcard presence, both hole cards are overcards
+
+        if hand.0 >> 2 > board[0] >> 2 || hand.1 >> 2 > board[0] >> 2
+        {
+            ret.0 = true;
+        }
+        if hand.0 >> 2 > board[0] >> 2 && hand.1 >> 2 > board[0] >> 2
+        {
+            ret.1 = true;
+        }
+
+        ret
+    }
+
+    fn eval_gutshot (hand: &(Card, Card), board: &Vec<Card>) -> (bool, bool)
+    {
+        let mut compboard = board.clone();
+        let mut ret = (false, false);
+
+        compboard.push(hand.0);
+        compboard.push(hand.1);
+
+        compboard.sort_unstable_by(|a, b| b.cmp(&a));
+
+        let compboard_deranked = derank(&compboard);
+
+        const GMASK_1: [u8; 3] = [2, 1, 1];
+        const GMASK_2: [u8; 3] = [1, 2, 1];
+        const GMASK_3: [u8; 3] = [1, 1, 2];
+
+        for i in 0..(compboard.len()-3)
+        {
+            let mask = [
+                compboard_deranked[i+1]-compboard_deranked[i],
+                compboard_deranked[i+2]-compboard_deranked[i+1],
+                compboard_deranked[i+3]-compboard_deranked[i+2]
+            ];
+
+            if mask == GMASK_1 || mask == GMASK_2 || mask == GMASK_3
+            {
+                let mut isone = false;
+
+                if
+                    compboard[i] == hand.0 ||
+                    compboard[i+1] == hand.0 ||
+                    compboard[i+2] == hand.0 ||
+                    compboard[i+3] == hand.0
+                {
+                    ret.0 = true;
+                    isone = true;
+                }
+
+                if
+                    compboard[i] == hand.1 ||
+                    compboard[i+1] == hand.1 ||
+                    compboard[i+2] == hand.1 ||
+                    compboard[i+3] == hand.1
+                {
+                    if isone
+                    {
+                        ret.1 = true;
+                    }
+                    else
+                    {
+                        ret.0 = true;
+                    }
+                }
+            }
+        }
+        
+        ret
+    }
+
+
+    fn eval_oesd (hand: &(Card, Card), board: &Vec<Card>) -> (bool, bool)
+    {
+        let mut compboard = board.clone();
+        let mut ret = (false, false);
+
+        compboard.push(hand.0);
+        compboard.push(hand.1);
+
+        compboard.sort_unstable_by(|a, b| b.cmp(&a));
+
+        let compboard_deranked = derank(&compboard);
+
+        const OEMASK: [u8; 3] = [1, 1, 1];
+        const DGMASK: [u8; 4] = [2, 1, 1, 2];
+
+        // normal openender
+        for i in 0..(compboard.len()-3)
+        {
+            if compboard_deranked[i] == 0 && compboard_deranked[i+3] == 12
+            {
+                continue; // no self-respecting oesd has twos or aces
+            }
+
+            let mask = [
+                compboard_deranked[i+1]-compboard_deranked[i],
+                compboard_deranked[i+2]-compboard_deranked[i+1],
+                compboard_deranked[i+3]-compboard_deranked[i+2]
+            ];
+
+            if mask == OEMASK
+            {
+                let mut isone = false;
+
+                if
+                    compboard[i] == hand.0 ||
+                    compboard[i+1] == hand.0 ||
+                    compboard[i+2] == hand.0 ||
+                    compboard[i+3] == hand.0
+                {
+                    ret.0 = true;
+                    isone = true;
+                }
+
+                if
+                    compboard[i] == hand.1 ||
+                    compboard[i+1] == hand.1 ||
+                    compboard[i+2] == hand.1 ||
+                    compboard[i+3] == hand.1
+                {
+                    if isone
+                    {
+                        ret.1 = true;
+                    }
+                    else
+                    {
+                        ret.0 = true;
+                    }
+                }
+            }
+        }
+        
+        // dgsd
+        for i in 0..(compboard.len()-4)
+        {
+            let mask = [
+                compboard_deranked[i+1]-compboard_deranked[i],
+                compboard_deranked[i+2]-compboard_deranked[i+1],
+                compboard_deranked[i+3]-compboard_deranked[i+2],
+                compboard_deranked[i+4]-compboard_deranked[i+3]
+            ];
+
+            if mask == DGMASK
+            {
+                let mut isone = false;
+
+                if
+                    compboard[i] == hand.0 ||
+                    compboard[i+1] == hand.0 ||
+                    compboard[i+2] == hand.0 ||
+                    compboard[i+3] == hand.0 ||
+                    compboard[i+4] == hand.0
+                {
+                    ret.0 = true;
+                    isone = true;
+                }
+
+                if
+                    compboard[i] == hand.1 ||
+                    compboard[i+1] == hand.1 ||
+                    compboard[i+2] == hand.1 ||
+                    compboard[i+3] == hand.1 ||
+                    compboard[i+4] == hand.1
+                {
+                    if isone
+                    {
+                        ret.1 = true;
+                    }
+                    else
+                    {
+                        ret.0 = true;
+                    }
+                }
+            }
+        }
+        
+        ret
+    }
+
+
+    fn eval_fdraw (hand: &(Card, Card), board: &Vec<Card>) -> (bool, bool)
+    {
+        let mut suits = [0, 0, 0, 0];
+
+        for card in board
+        {
+            suits[(card % 4) as usize] += 1;
+        }
+
+        for i in 0..4
+        {
+            if suits[i] == 3 && hand.0 % 4 == i as u8 && hand.1 % 4 == i as u8
+            {
+                return (true, true);
+            }
+            else if suits[i] == 4 && (hand.0 % 4 == i as u8 || hand.1 % 4 == i as u8)
+            {
+                return (true, false);
+            }
+
+        }
+
+        (false, false)
+    }
+
+    (presence, bothhole)
+}
+
+/// Removes the suit information from a card vector, leaving only the ranks.
+fn derank(cards: &Vec<u8>) -> Vec<u8>
+{
+    let mut deranked: Vec<u8> = vec![];
+
+    for card in cards
+    {
+        deranked.push(card >> 2);
+    }
+
+    deranked
+}
