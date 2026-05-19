@@ -1521,7 +1521,7 @@ impl PostFlopGame {
 
 fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame, p_actions: Vec<PackagedAction>)
 {
-    const VERBOSE: bool = true;
+    const VERBOSE: bool = false;
 
     if VERBOSE { println!("push_nodelocks: Starting packing it up!"); }
 
@@ -1548,6 +1548,8 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
 
         if packaged_action.lock_rules.is_some() && packaged_action.lock_rules.as_ref().unwrap().len() > 0
         {
+            println!("push_nodelocks: Ruling the rule");
+
             let rule_num = packaged_action.lock_rules.as_ref().unwrap().len();
             let rules = packaged_action.lock_rules.as_ref().unwrap().clone();
 
@@ -1578,7 +1580,10 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                     {
                         let thisgrid = get_trvth_grid(r, &board);
                         
-                        trvthgrid = trvthgrid.iter().zip(&thisgrid).map(|(&x, &y)| x && y).collect::<Vec<bool>>().try_into().expect("this is literally not going to happen ever");
+                        for i in 0..RANGESIZE
+                        {
+                            trvthgrid[i] = trvthgrid[i] && thisgrid[i];
+                        }
                     }
                 }
 
@@ -1588,12 +1593,12 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                 }
                 else
                 {
-                    for i in 0..RANGESIZE
+                    for pair in 0..RANGESIZE
                     {
-                        if trvthgrid[i] == true
+                        if trvthgrid[pair] == true
                         {
-                            end_range[i] = rules[i].percentage;
-                            end_limit[i] = rules[i].limitation;
+                            end_range[pair] = rules[i].percentage;
+                            end_limit[pair] = rules[i].limitation;
                         }
                     }
                 }
@@ -1713,7 +1718,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                             if VERBOSE {println!("apply_range: offsuit: card1: {:?}, card2: {:?}", card1, card2);}
 
                             let index = card_pair_to_index(card1 as Card, card2 as Card);
-                            if trvthgrid[index] == true
+                            if trvthgrid[index] == true && !(lock_range[i * 13 + j] == 0.0 && lock_limit[i * 13 + j] == 1)
                             {
                                 end_range[index] = lock_range[i * 13 + j];
                                 end_limit[index] = lock_limit[i * 13 + j];
@@ -1731,7 +1736,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                         if VERBOSE {println!("apply_range: suited: card1: {:?}, card2: {:?}", card1, card2);}
                         
                         let index = card_pair_to_index(card1 as Card, card2 as Card);
-                        if trvthgrid[index] == true
+                        if trvthgrid[index] == true && !(lock_range[i * 13 + j] == 0.0 && lock_limit[i * 13 + j] == 1)
                         {
                             end_range[index] = lock_range[i * 13 + j];
                             end_limit[index] = lock_limit[i * 13 + j];
@@ -1756,7 +1761,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                             if VERBOSE {println!("apply_range: pair: card1: {:?}, card2: {:?}", card1, card2);}
 
                             let index = card_pair_to_index(card1 as Card, card2 as Card);
-                            if trvthgrid[index] == true
+                            if trvthgrid[index] == true && !(lock_range[i * 13 + j] == 0.0 && lock_limit[i * 13 + j] == 1)
                             {
                                 end_range[index] = lock_range[i * 13 + j];
                                 end_limit[index] = lock_limit[i * 13 + j];
