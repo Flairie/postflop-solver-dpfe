@@ -2333,6 +2333,7 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
             }
         }
 
+        println!("{:?}", return_data);
         return_data
     }
 
