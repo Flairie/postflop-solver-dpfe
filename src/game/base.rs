@@ -2177,7 +2177,7 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
                         straight_height = 0; // BoArD wHeEl Is NoT a SeRiOuS wHeEl
                     }
                 }
-                else if counter >= 3 && 3 == straight_height
+                else if counter >= 3
                 {
                     straight_height_top = 3;
                 }
@@ -2209,7 +2209,7 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
                     straight_height_second = u8::MAX;
                     // it didn't affect anything but variable values are now snappy and look nice
                 }
-                else if counter >= 3 && height == straight_height
+                else if counter >= 3
                 {
                     straight_height_second = straight_height_top;
                     straight_height_top = r;
