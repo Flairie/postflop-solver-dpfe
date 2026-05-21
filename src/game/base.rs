@@ -1874,7 +1874,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                 
             }
 
-            else if rule_type.0 == 3
+            else if rule_type.0 == 4
 
             {
                 let data = evaluate_draw(&index_to_card_pair(i), board);
@@ -1893,7 +1893,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                 }
             }
 
-            else if rule_type.0 == 4
+            else if rule_type.0 == 5
 
             {
                 // board texture processing
