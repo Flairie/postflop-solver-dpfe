@@ -2212,7 +2212,7 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
                 else if counter >= 3 && height == straight_height
                 {
                     straight_height_second = straight_height_top;
-                    straight_height_top = height;
+                    straight_height_top = r;
                 }
             }
         }
