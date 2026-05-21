@@ -2251,6 +2251,7 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
 
     fn evaluate_flush (hand: &(Card, Card), board: &Vec<Card>) -> (bool, u8)
     {
+        println!("flush eval start");
         let mut cards = vec![hand.0, hand.1];
         cards.extend(board);
 
@@ -2268,6 +2269,8 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
             {
                 is_flush = true;
                 flush_suit = suit;
+
+                println!("flush detected");
             }
         }
 
