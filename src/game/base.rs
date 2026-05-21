@@ -2111,136 +2111,120 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
         cards.sort_unstable_by(|a, b| a.cmp(&b)); // ascending order because can override stuff for free
 
 
-        let cards_deranked = derank(&cards);
+        let cards_working = depair(&derank(&cards));
         let board_deranked = derank(&board);
         
-        println!("{:?}", cards_deranked);
+        println!("{:?}", cards_working);
 
         let mut result: (u8, u8) = (0, 0);
 
-        let mut straight_counter: u8 = 0;
+        const STRAIGHT_PATTERN: [u8; 4] = [1, 1, 1, 1];
+        const WHEEL_BOTTOM: [u8; 4] = [0, 1, 2, 3];
+
         let mut straight_height: u8 = 0;
 
-        // to wheel some wheels
-        if (cards_deranked[cards_deranked.len() - 1] == 12) && (cards_deranked[0] == 0)
+        if cards_working.len() < 5
         {
-            straight_counter = 1;
-        }
-
-        for i in 1..cards_deranked.len()
-        {
-            if cards_deranked[i] - cards_deranked[i-1] == 1
-            {
-                straight_counter += 1;
-                straight_height = cards_deranked[i];
-            }
-            else if cards_deranked[i] == cards_deranked[i-1]
-            {
-                continue;
-            }
-            else
-            {
-                straight_counter = 0;
-            }
-        }
-
-        if straight_counter < 5
-        {
-            result.0 = 0;
-            result.1 = 0;
-
             return result;
         }
-        else 
+        else if cards_working[0..4] == WHEEL_BOTTOM && cards_working[cards_working.len() - 1] == 12
         {
-            result.0 = straight_height;
+            result.0 = 1;
+            straight_height = 3;
+        }
+        else
+        {
+            for i in 0..cards_working.len() - 4
+            {
+                let pattern = [
+                    cards_working[i + 1] - cards_working[i], 
+                    cards_working[i + 2] - cards_working[i + 1], 
+                    cards_working[i + 3] - cards_working[i + 2],
+                    cards_working[i + 4] - cards_working[i + 3]
+                    ];
+
+                if pattern == STRAIGHT_PATTERN
+                {
+                    result.0 = 1;
+                    straight_height = cards_working[i + 4];
+                }
+            }
         }
 
-        // check for other possible more nutted straights
-        let mut straight_counter_2: u8 = 0;
-        let mut straight_height_2: u8 = 0;
+        let mut straight_height_top: u8 = u8::MAX;
+        let mut straight_height_second: u8 = u8::MAX;
 
-        let mut straight_1: u8 = 0;
-        let mut straight_2: u8 = 0;
 
-        let mut gap_data: Vec<u8> = vec![];
-
-        if (cards_deranked[cards_deranked.len() - 1] == 12) && (cards_deranked[0] == 0)
+        for r in -1..9
         {
-            straight_counter_2 = 1;
-            gap_data.push(0);
-        }
-
-        for i in 1..board_deranked.len()
-        {
-            // difference stuff
-            let difference = board_deranked[i] - board_deranked[i-1];
-            if gap_data.len() == 5
+            if r == -1 // whell 
             {
-                gap_data.remove(0);
-            }
-            gap_data.push(difference as u8);
+                let test_arr: [u8; 5] = [0, 1, 2, 3, 12];
 
+                let mut counter: u8 = 0;
+                for i in 0..4
+                {
+                    if board_deranked.contains(&test_arr[i])
+                    {
+                        counter += 1;
+                    }
+                }
 
-            // board measures
-            if board_deranked[i] - board_deranked[i-1] == 1
-            {
-                straight_counter_2 += 1;
-                straight_height_2 = board_deranked[i];
-            }
-            else if cards_deranked[i] == cards_deranked[i-1]
-            {
-                continue;
+                if counter == 5
+                {
+                    if straight_height == 3
+                    {
+                        straight_height = 0; // BoArD wHeEl Is NoT a SeRiOuS wHeEl
+                    }
+                }
+                else if counter >= 3 && 3 == straight_height
+                {
+                    straight_height_top = 3;
+                }
             }
             else
             {
-                let mut sum: u8 = gap_data.iter().sum();
-                
-                while sum > 2
-                {
-                    sum -= gap_data[0];
-                    gap_data.remove(0);
+                let r = r as u8;
 
-                    straight_counter_2 -= 1;
+                let test_arr: [u8; 5] = [r, r + 1, r + 2, r + 3, r + 4];
+                let height = r + 4;
+
+                let mut counter: u8 = 0;
+                for i in 0..5
+                {
+                    if board_deranked.contains(&test_arr[i])
+                    {
+                        counter += 1;
+                    }
+                }
+
+                if counter == 5
+                {
+                    if height >= straight_height
+                    {
+                        straight_height = 0; // board straight is not a serious straight, straights below board straight are even less serious
+                    }
+
+                    straight_height_top = u8::MAX;
+                    straight_height_second = u8::MAX;
+                    // it didn't affect anything but variable values are now snappy and look nice
+                }
+                else if counter >= 3 && height == straight_height
+                {
+                    straight_height_second = straight_height_top;
+                    straight_height_top = height;
                 }
             }
-
-            if straight_counter_2 >= 5
-            {
-                straight_2 = straight_1;
-                straight_1 = straight_height_2;
-            }
-        }
-
-        let sum: u8 = gap_data.iter().sum();
-
-        // extending upwards if possible
-        if straight_counter_2 >= 3 && sum == 0 && straight_height_2 < 11
-        {
-            straight_2 = straight_1;
-            straight_1 = straight_height_2 + 2;
-        }
-        else if straight_counter_2 >= 4 && sum < 2 && straight_height_2 < 12
-        {
-            straight_2 = straight_1;
-            straight_1 = straight_height_2 + 1;
-        }
-
-        // or broadway
-        else if straight_counter_2 == 3 && sum <= 1 && straight_height_2 == 11
-        {
-            straight_2 = straight_1;
-            straight_1 = 12;
         }
 
 
         // returning shit
 
-        if straight_height == straight_1
+        if straight_height == straight_height_second
         {
             result.1 = 2;
         }
-        else if straight_height_2 == straight_2
+        else if straight_height == straight_height_top
         {
             result.1 = 1;
         }
@@ -2678,4 +2662,23 @@ fn derank(cards: &Vec<u8>) -> Vec<u8>
     }
 
     deranked
+}
+
+/// Removes paires from deranked and sorted card vec
+fn depair(cards: &Vec<u8>) -> Vec<u8>
+{
+    let mut depaired: Vec<u8> = vec![];
+
+    let mut last_card = u8::MAX;
+
+    for card in cards
+    {
+        if *card != last_card
+        {
+            depaired.push(*card);
+            last_card = *card;
+        }
+    }
+
+    depaired
 }
