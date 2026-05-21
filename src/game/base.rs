@@ -2110,11 +2110,11 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
         cards.extend(board);
         cards.sort_unstable_by(|a, b| a.cmp(&b)); // ascending order because can override stuff for free
 
-        
-        println!("{:?}", cards);
 
         let cards_deranked = derank(&cards);
         let board_deranked = derank(&board);
+        
+        println!("{:?}", cards_deranked);
 
         let mut result: (u8, u8) = (0, 0);
 
