@@ -1873,11 +1873,11 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                 
                 
             }
-            
+
             else if rule_type.0 == 3
 
             {
-                let data = evaluate_draw(hand, board);
+                let data = evaluate_draw(&index_to_card_pair(i), board);
 
                 if rule_type.2 == 2
                 {
