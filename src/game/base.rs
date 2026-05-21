@@ -1810,22 +1810,22 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                 
                 if hand.0 > hand.1 // should always be true but im paranoid
                 {
-                    rank = hand.0 >> 2
+                    rank = hand.0 >> 2;
                 }
                 else
                 {
-                    rank = hand.1 >> 2
+                    rank = hand.1 >> 2;
                 }
 
-                if rule_type.1 == 0 && rank < rule_type.1
+                if rule_type.1 == 0 && rank < rule_type.2
                 {
                     trvthgrid[i] = true;
                 }
-                else if rule_type.1 == 1 && rank == rule_type.1
+                else if rule_type.1 == 1 && rank == rule_type.2
                 {
                     trvthgrid[i] = true;
                 }
-                else if rule_type.1 == 2 && rank > rule_type.1
+                else if rule_type.1 == 2 && rank > rule_type.2
                 {
                     trvthgrid[i] = true;
                 }
@@ -2198,6 +2198,8 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
                     }
                 }
 
+                println!({counter});
+
                 if counter == 5
                 {
                     if height >= straight_height
@@ -2212,7 +2214,7 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
                 else if counter >= 3
                 {
                     straight_height_second = straight_height_top;
-                    straight_height_top = r;
+                    straight_height_top = height;
                 }
             }
         }
