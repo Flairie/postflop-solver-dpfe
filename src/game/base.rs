@@ -1837,7 +1837,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
             {
                 let data = evaluate_rank(&index_to_card_pair(i), board);
 
-                const IS_MANUAL: [bool; 10] = [true, true, false, true, true, true, false, false, false, false]; // gahh
+                const IS_MANUAL: [bool; 10] = [true, true, false, false, true, true, true, false, false, false]; // gahh
                 
                 if rule_type.0 == 3 && data.0 > rule_type.1
                 {
@@ -1865,7 +1865,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                             }
                         }
                     }
-                    else if rule_type.1 == 3 && data.0 == 3 // autotrue
+                    else // autotrue
                     {
                         trvthgrid[i] = true;
                     }
