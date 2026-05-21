@@ -1930,23 +1930,23 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
     }
     else if straight_data.0 != 0 // straight, obviously
     {
-        ret = (4, straight_data.1);
+        ret = (5, straight_data.1);
     }
     else if flush_data.0 == true // flush, obviously
     {
-        ret = (5, flush_data.1);
+        ret = (6, flush_data.1);
     }
     else if repeats_data.0 == 5 // full house
     {
-        ret = (6, repeats_data.1);
+        ret = (7, repeats_data.1);
     }
     else if repeats_data.0 == 6 // four of a kind
     {
-        ret = (7, repeats_data.1);
+        ret = (8, repeats_data.1);
     }
     else if is_straight_flush
     {
-        ret = (8, u8::MAX); // max for the sake of flex
+        ret = (9, u8::MAX); // max for the sake of flex
     }
     else // brokie high card T_T
     {
