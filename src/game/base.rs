@@ -1990,7 +1990,6 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
         ret
     }
 
-
     fn evaluate_repeats (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
     {
         let mut cards = vec![hand.0, hand.1];
@@ -2102,7 +2101,6 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
 
         return_data
     }
-
 
     fn evaluate_straight(hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
     {
@@ -2376,6 +2374,8 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
 
         return false;
     }
+
+    println!("{:?}", ret);
 
     ret
 }
