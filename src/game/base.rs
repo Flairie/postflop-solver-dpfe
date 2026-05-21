@@ -1873,10 +1873,24 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                 
                 
             }
+            
             else if rule_type.0 == 3
 
             {
-                // draw processing
+                let data = evaluate_draw(hand, board);
+
+                if rule_type.2 == 2
+                {
+                    trvthgrid[i] = data.0[rule_type.1 as usize] && data.1[rule_type.1 as usize];
+                }
+                else if rule_type.2 == 1
+                {
+                    trvthgrid[i] = data.0[rule_type.1 as usize] && !data.1[rule_type.1 as usize];
+                }
+                else
+                {
+                    trvthgrid[i] = data.0[rule_type.1 as usize];
+                }
             }
 
             else if rule_type.0 == 4
@@ -2113,8 +2127,6 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
 
         let cards_working = depair(&derank(&cards));
         let board_deranked = derank(&board);
-        
-        println!("{:?}", cards_working);
 
         let mut result: (u8, u8) = (0, 0);
 
@@ -2198,8 +2210,6 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
                     }
                 }
 
-                println!("{counter}");
-
                 if counter == 5
                 {
                     if height >= straight_height
@@ -2218,8 +2228,6 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
                 }
             }
         }
-
-        println!("{straight_height_top}");
 
         // returning shit
 
@@ -2258,8 +2266,6 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
             {
                 is_flush = true;
                 flush_suit = suit;
-
-                println!("flush detected");
             }
         }
 
@@ -2358,7 +2364,7 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
             {
                 line_suit = suit;
                 last_rank = rank;
-                suit_line = 0;
+                suit_line = 1;
             }
         }
 
@@ -2467,39 +2473,75 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 4], [bool; 
 
         compboard.sort_unstable_by(|a, b| b.cmp(&a));
 
-        let compboard_deranked = derank(&compboard);
+        let compboard_processed = depair(&derank(&compboard));
+        let compboard_depaired = depair_suited(&compboard);
 
-        const GMASK_1: [u8; 3] = [2, 1, 1];
-        const GMASK_2: [u8; 3] = [1, 2, 1];
-        const GMASK_3: [u8; 3] = [1, 1, 2];
+        const GPATTERN_1: [u8; 3] = [2, 1, 1];
+        const GPATTERN_2: [u8; 3] = [1, 2, 1];
+        const GPATTERN_3: [u8; 3] = [1, 1, 2];
 
-        for i in 0..(compboard.len()-3)
+        if compboard_processed.len() < 4
+        {
+            return ret;
+        }
+
+        const WHEEL_RANKS: [u8; 5] = [0, 1, 2, 3, 12];
+        const BROAD_RANKS: [u8; 5] = [8, 9, 10, 11, 12];
+
+        // wheel gutshot detector
+
+        { // gotta get dirty, let's keep it contained in its own scope
+            let mut matches = 0;
+            let mut hole = 0;
+
+            for i in 0..5 {
+                if compboard_processed.contains(&(WHEEL_RANKS[i]))
+                {
+                    matches += 1;
+                }
+
+                if hand.0 >> 2 == WHEEL_RANKS[i] || hand.1 >> 2 == WHEEL_RANKS[i]
+                {
+                    hole += 1;
+                }
+            }
+
+            if matches == 4 && hole > 0
+            {
+                ret.0 = true;
+                ret.1 = hole == 2;
+            }
+        }
+
+        // normal gutshot detector
+
+        for i in 0..(compboard_processed.len()-3)
         {
             let mask = [
-                compboard_deranked[i+1]-compboard_deranked[i],
-                compboard_deranked[i+2]-compboard_deranked[i+1],
-                compboard_deranked[i+3]-compboard_deranked[i+2]
+                compboard_processed[i+1]-compboard_processed[i],
+                compboard_processed[i+2]-compboard_processed[i+1],
+                compboard_processed[i+3]-compboard_processed[i+2]
             ];
 
-            if mask == GMASK_1 || mask == GMASK_2 || mask == GMASK_3
+            if mask == GPATTERN_1 || mask == GPATTERN_2 || mask == GPATTERN_3
             {
                 let mut isone = false;
 
                 if
-                    compboard[i] == hand.0 ||
-                    compboard[i+1] == hand.0 ||
-                    compboard[i+2] == hand.0 ||
-                    compboard[i+3] == hand.0
+                    compboard_depaired[i] == hand.0 ||
+                    compboard_depaired[i+1] == hand.0 ||
+                    compboard_depaired[i+2] == hand.0 ||
+                    compboard_depaired[i+3] == hand.0
                 {
                     ret.0 = true;
                     isone = true;
                 }
 
                 if
-                    compboard[i] == hand.1 ||
-                    compboard[i+1] == hand.1 ||
-                    compboard[i+2] == hand.1 ||
-                    compboard[i+3] == hand.1
+                    compboard_depaired[i] == hand.1 ||
+                    compboard_depaired[i+1] == hand.1 ||
+                    compboard_depaired[i+2] == hand.1 ||
+                    compboard_depaired[i+3] == hand.1
                 {
                     if isone
                     {
@@ -2510,6 +2552,31 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 4], [bool; 
                         ret.0 = true;
                     }
                 }
+            }
+        }
+
+        // broadway gutshot detector
+
+        { // see wheel to understand the lore behind this bracket
+            let mut matches = 0;
+            let mut hole = 0;
+
+            for i in 0..5 {
+                if compboard_processed.contains(&(BROAD_RANKS[i]))
+                {
+                    matches += 1;
+                }
+
+                if hand.0 >> 2 == BROAD_RANKS[i] || hand.1 >> 2 == BROAD_RANKS[i]
+                {
+                    hole += 1;
+                }
+            }
+
+            if matches == 4 && hole > 0
+            {
+                ret.0 = true;
+                ret.1 = hole == 2;
             }
         }
         
@@ -2527,23 +2594,28 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 4], [bool; 
 
         compboard.sort_unstable_by(|a, b| b.cmp(&a));
 
-        let compboard_deranked = derank(&compboard);
-
+        let compboard_processed = depair(&derank(&compboard));
+        let compboard_depaired = depair_suited(&compboard);
         const OEMASK: [u8; 3] = [1, 1, 1];
-        const DGMASK: [u8; 4] = [2, 1, 1, 2];
+        const DGPATTERN: [u8; 4] = [2, 1, 1, 2];
+
+        if compboard_processed.len() < 4
+        {
+            return ret;
+        }
 
         // normal openender
-        for i in 0..(compboard.len()-3)
+        for i in 0..(compboard_depaired.len()-3)
         {
-            if compboard_deranked[i] == 0 && compboard_deranked[i+3] == 12
+            if compboard_processed[i] == 0 && compboard_processed[i+3] == 12
             {
                 continue; // no self-respecting oesd has twos or aces
             }
 
             let mask = [
-                compboard_deranked[i+1]-compboard_deranked[i],
-                compboard_deranked[i+2]-compboard_deranked[i+1],
-                compboard_deranked[i+3]-compboard_deranked[i+2]
+                compboard_processed[i+1]-compboard_processed[i],
+                compboard_processed[i+2]-compboard_processed[i+1],
+                compboard_processed[i+3]-compboard_processed[i+2]
             ];
 
             if mask == OEMASK
@@ -2551,20 +2623,20 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 4], [bool; 
                 let mut isone = false;
 
                 if
-                    compboard[i] == hand.0 ||
-                    compboard[i+1] == hand.0 ||
-                    compboard[i+2] == hand.0 ||
-                    compboard[i+3] == hand.0
+                    compboard_depaired[i] == hand.0 ||
+                    compboard_depaired[i+1] == hand.0 ||
+                    compboard_depaired[i+2] == hand.0 ||
+                    compboard_depaired[i+3] == hand.0
                 {
                     ret.0 = true;
                     isone = true;
                 }
 
                 if
-                    compboard[i] == hand.1 ||
-                    compboard[i+1] == hand.1 ||
-                    compboard[i+2] == hand.1 ||
-                    compboard[i+3] == hand.1
+                    compboard_depaired[i] == hand.1 ||
+                    compboard_depaired[i+1] == hand.1 ||
+                    compboard_depaired[i+2] == hand.1 ||
+                    compboard_depaired[i+3] == hand.1
                 {
                     if isone
                     {
@@ -2579,36 +2651,36 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 4], [bool; 
         }
         
         // dgsd
-        for i in 0..(compboard.len()-4)
+        for i in 0..(compboard_depaired.len()-4)
         {
             let mask = [
-                compboard_deranked[i+1]-compboard_deranked[i],
-                compboard_deranked[i+2]-compboard_deranked[i+1],
-                compboard_deranked[i+3]-compboard_deranked[i+2],
-                compboard_deranked[i+4]-compboard_deranked[i+3]
+                compboard_processed[i+1]-compboard_processed[i],
+                compboard_processed[i+2]-compboard_processed[i+1],
+                compboard_processed[i+3]-compboard_processed[i+2],
+                compboard_processed[i+4]-compboard_processed[i+3]
             ];
 
-            if mask == DGMASK
+            if mask == DGPATTERN
             {
                 let mut isone = false;
 
                 if
-                    compboard[i] == hand.0 ||
-                    compboard[i+1] == hand.0 ||
-                    compboard[i+2] == hand.0 ||
-                    compboard[i+3] == hand.0 ||
-                    compboard[i+4] == hand.0
+                    compboard_depaired[i] == hand.0 ||
+                    compboard_depaired[i+1] == hand.0 ||
+                    compboard_depaired[i+2] == hand.0 ||
+                    compboard_depaired[i+3] == hand.0 ||
+                    compboard_depaired[i+4] == hand.0
                 {
                     ret.0 = true;
                     isone = true;
                 }
 
                 if
-                    compboard[i] == hand.1 ||
-                    compboard[i+1] == hand.1 ||
-                    compboard[i+2] == hand.1 ||
-                    compboard[i+3] == hand.1 ||
-                    compboard[i+4] == hand.1
+                    compboard_depaired[i] == hand.1 ||
+                    compboard_depaired[i+1] == hand.1 ||
+                    compboard_depaired[i+2] == hand.1 ||
+                    compboard_depaired[i+3] == hand.1 ||
+                    compboard_depaired[i+4] == hand.1
                 {
                     if isone
                     {
@@ -2680,6 +2752,28 @@ fn depair(cards: &Vec<u8>) -> Vec<u8>
         {
             depaired.push(*card);
             last_card = *card;
+        }
+    }
+
+    depaired
+}
+
+
+/// depair but for suited vectors
+fn depair_suited(cards: &Vec<u8>) -> Vec<u8>
+{
+    let mut depaired: Vec<u8> = vec![];
+
+    let mut last_rank = u8::MAX;
+
+    for card in cards
+    {
+        let rank = card >> 2;
+
+        if rank != last_rank
+        {
+            depaired.push(*card);
+            last_rank = rank;
         }
     }
 
