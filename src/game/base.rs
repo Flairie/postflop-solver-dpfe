@@ -1912,41 +1912,41 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
 
     let is_straight_flush = humble_straight_flush(hand, &board_sorted); // who cares about straight flush ranks, also just in case you can't check for straight flushes with the other functions as you having straight and flush doesn't necessarily mean you have a straight flush
 
-    if repeats_data.0 == 1 // pair
+    if is_straight_flush
     {
-        ret = (1, repeats_data.1);
-    }
-    else if repeats_data.0 == 2 // two pair
-    {
-        ret = (2, repeats_data.1);
-    }
-    else if repeats_data.0 == 3 // three of a kind, trips
-    {
-        ret = (3, repeats_data.1);
-    }
-    else if repeats_data.0 == 4 // set
-    {
-        ret = (4, repeats_data.1);
-    }
-    else if straight_data.0 != 0 // straight, obviously
-    {
-        ret = (5, straight_data.1);
-    }
-    else if flush_data.0 == true // flush, obviously
-    {
-        ret = (6, flush_data.1);
-    }
-    else if repeats_data.0 == 5 // full house
-    {
-        ret = (7, repeats_data.1);
+        ret = (9, u8::MAX); // max for the sake of flex
     }
     else if repeats_data.0 == 6 // four of a kind
     {
         ret = (8, repeats_data.1);
     }
-    else if is_straight_flush
+    else if repeats_data.0 == 5 // full house
     {
-        ret = (9, u8::MAX); // max for the sake of flex
+        ret = (7, repeats_data.1);
+    }
+    else if flush_data.0 == true // flush, obviously
+    {
+        ret = (6, flush_data.1);
+    }
+    else if straight_data.0 != 0 // straight, obviously
+    {
+        ret = (5, straight_data.1);
+    }
+    else if repeats_data.0 == 4 // set
+    {
+        ret = (4, repeats_data.1);
+    }
+    else if repeats_data.0 == 3 // three of a kind, trips
+    {
+        ret = (3, repeats_data.1);
+    }
+    else if repeats_data.0 == 2 // two pair
+    {
+        ret = (2, repeats_data.1);
+    }
+    else if repeats_data.0 == 1 // pair
+    {
+        ret = (1, repeats_data.1);
     }
     else // brokie high card T_T
     {
@@ -2255,7 +2255,7 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
         cards.extend(board);
 
         let mut suit_counts = [0; 4];
-        let mut return_data = (false, 0); // is flush, rank of flush, kicker rank
+        let mut return_data = (false, 0); // is flush, rank of flush
         let mut is_flush = false;
         let mut flush_suit: u8 = u8::MAX;
 
@@ -2264,7 +2264,7 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
             let suit = card % 4;
             suit_counts[suit as usize] += 1;
 
-            if suit_counts[suit as usize] == 5
+            if suit_counts[suit as usize] >= 5
             {
                 is_flush = true;
                 flush_suit = suit;
@@ -2300,6 +2300,10 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
         else if hand.1 % 4 == flush_suit
         {
             topcard = hand.1 >> 2;
+        }
+        else
+        {
+            return (false, 0);
         }
 
         let mut nuttiness: u8 = 1;
