@@ -2045,7 +2045,7 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
             {
                 return_data.1 = 2; // top pair
             }
-            else if pair_rank == board[1] >> 2
+            else if pair_rank >= board[1] >> 2
             {
                 return_data.1 = 3; // second pair (or second underpair)
             }
@@ -2104,9 +2104,14 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
 
     fn evaluate_straight(hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
     {
+        println!("straight eval start");
+
         let mut cards = vec![hand.0, hand.1];
         cards.extend(board);
         cards.sort_unstable_by(|a, b| a.cmp(&b)); // ascending order because can override stuff for free
+
+        
+        println!("{:?}", cards);
 
         let cards_deranked = derank(&cards);
         let board_deranked = derank(&board);
@@ -2249,7 +2254,6 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
 
     fn evaluate_flush (hand: &(Card, Card), board: &Vec<Card>) -> (bool, u8)
     {
-        println!("flush eval start");
         let mut cards = vec![hand.0, hand.1];
         cards.extend(board);
 
@@ -2331,7 +2335,6 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
             }
         }
 
-        println!("{:?}", return_data);
         return_data
     }
 
