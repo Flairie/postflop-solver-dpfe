@@ -2400,7 +2400,7 @@ fn evaluate_class (hand: &(Card, Card)) -> u8
 
 
 /// draw eval
-fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 4], [bool; 4])
+fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 5])
 {
     let mut cards = vec![hand.0, hand.1];
     cards.extend(board);
@@ -2411,8 +2411,8 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 4], [bool; 
         tmp
     };
 
-    let mut presence: [bool; 4] = [false, false, false, false]; // overcards, gutshot, open ended, flush draw present
-    let mut bothhole: [bool; 4] = [false, false, false, false]; // same but for if both hole cards are used
+    let mut presence: [bool; 5] = [false, false, false, false, false]; // overcards, gutshot, open ended, backdoor, flush draw present
+    let mut bothhole: [bool; 5] = [false, false, false, false, false]; // same but for if both hole cards are used
 
     let rank = evaluate_rank(hand, &board_sorted);
 
@@ -2441,8 +2441,10 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 4], [bool; 
     }
     if rank.0 < 6 // no flush
     {
-        presence[3] = fdrw_data.0;
-        bothhole[3] = fdrw_data.1;
+        presence[3] = fdrw_data.1.0;
+        bothhole[3] = fdrw_data.1.1;
+        presence[4] = fdrw_data.0.0;
+        bothhole[4] = fdrw_data.0.1;
     }
 
     // FUNCS
@@ -2698,7 +2700,7 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 4], [bool; 
     }
 
 
-    fn eval_fdraw (hand: &(Card, Card), board: &Vec<Card>) -> (bool, bool)
+    fn eval_fdraw (hand: &(Card, Card), board: &Vec<Card>) -> ((bool, bool), (bool, bool)) // flush draw present, both hole cards in flush draw, backdoor flush draw present, both hole cards in backdoor flush draw
     {
         let mut suits = [0, 0, 0, 0];
 
@@ -2709,18 +2711,26 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 4], [bool; 
 
         for i in 0..4
         {
-            if suits[i] == 3 && hand.0 % 4 == i as u8 && hand.1 % 4 == i as u8
+            if suits[i] == 2 && hand.0 % 4 == i as u8 && hand.1 % 4 == i as u8
             {
-                return (true, true);
+                return ((true, true), (false, false));
             }
-            else if suits[i] == 4 && (hand.0 % 4 == i as u8 || hand.1 % 4 == i as u8)
+            else if suits[i] == 3 && (hand.0 % 4 == i as u8 || hand.1 % 4 == i as u8)
             {
-                return (true, false);
+                return ((true, false), (false, false));
+            }
+            else if suits[i] == 1 && hand.0 % 4 == i as u8 && hand.1 % 4 == i as u8
+            {
+                return ((false, false), (true, true));
+            }
+            else if suits[i] == 2 && (hand.0 % 4 == i as u8 || hand.1 % 4 == i as u8)
+            {
+                return ((false, false), (true, false));
             }
 
         }
 
-        (false, false)
+        ((false, false), (false, false))
     }
 
     (presence, bothhole)
