@@ -2453,6 +2453,10 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
     {
         let mut ret: (bool, bool) = (false, false); // overcard presence, both hole cards are overcards
 
+        if hand.0 >> 2 == hand.1 >> 2 // pocket pairs are not overcards, beach
+        {
+            return (false, false);
+        }
         if hand.0 >> 2 > board[0] >> 2 || hand.1 >> 2 > board[0] >> 2
         {
             ret.0 = true;
@@ -2473,7 +2477,7 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
         compboard.push(hand.0);
         compboard.push(hand.1);
 
-        compboard.sort_unstable_by(|a, b| b.cmp(&a));
+        compboard.sort_unstable_by(|a, b| a.cmp(&b));
 
         let compboard_processed = depair(&derank(&compboard));
         let compboard_depaired = depair_suited(&compboard);
@@ -2594,7 +2598,7 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
         compboard.push(hand.0);
         compboard.push(hand.1);
 
-        compboard.sort_unstable_by(|a, b| b.cmp(&a));
+        compboard.sort_unstable_by(|a, b| a.cmp(&b));
 
         let compboard_processed = depair(&derank(&compboard));
         let compboard_depaired = depair_suited(&compboard);
