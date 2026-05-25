@@ -414,6 +414,13 @@ impl ActionTree {
         {
             return Err("Empty tree in push_range_lock! How did we even get here?!".to_owned());
         }
+
+        if current_node.is_chance()
+        {
+            let new_node = &current_node.children[0];
+
+            return self.push_range_lock_recursive(line, lock_range, lock_limit, index, Some(new_node));
+        }
         
         if vine.len()-1 > index
         {
@@ -483,6 +490,13 @@ impl ActionTree {
             panic!("Empty tree in pull_range_lock! How did we even get here?!");
         }
 
+        if current_node.is_chance()
+        {
+            let new_node = &current_node.children[0];
+
+            return self.pull_range_lock_recursive(line, index, Some(new_node));
+        }
+
         if vine.len()-1 > index
         {
             let action = vine[index];
@@ -527,6 +541,13 @@ impl ActionTree {
         if vine.len() == 0
         {
             return Err("Empty tree in push_range_lock! How did we even get here?!".to_owned());
+        }
+
+        if current_node.is_chance()
+        {
+            let new_node = &current_node.children[0];
+
+            return self.push_rule_lock_recursive(line, lock_rules, index, Some(new_node));
         }
         
         if vine.len() - 1 > index
@@ -591,7 +612,14 @@ impl ActionTree {
         {
             panic!("Empty tree in pull_range_lock! How did we even get here?!");
         }
-        
+
+        if current_node.is_chance()
+        {
+            let new_node = &current_node.children[0];
+
+            return self.pull_rule_lock_recursive(line, index, Some(new_node));
+        }
+
         if vine.len() - 1 > index
         {
             let action = vine[0];
