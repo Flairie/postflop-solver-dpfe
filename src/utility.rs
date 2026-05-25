@@ -7,7 +7,6 @@ use std::ptr;
 #[cfg(feature = "custom-alloc")]
 use crate::alloc::*;
 
-use rayon::iter::MinLen;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
@@ -1032,6 +1031,7 @@ where
                 panic!("Too many fixing attempts, something is certainly not working");
             }
             fix_attempts += 1;
+            std::thread::sleep(Duration::from_secs(1));
         }
         
     }
