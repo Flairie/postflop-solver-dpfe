@@ -255,7 +255,7 @@ pub struct ActionTree {
 
 #[derive(Default)]
 #[cfg_attr(feature = "bincode", derive(Decode, Encode))]
-pub(crate) struct ActionTreeNode {
+pub struct ActionTreeNode {
     pub(crate) player: u8,
     pub(crate) board_state: BoardState,
     pub(crate) amount: i32,
