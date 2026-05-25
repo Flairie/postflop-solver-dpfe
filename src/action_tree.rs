@@ -426,10 +426,10 @@ impl ActionTree {
         {
             let action = vine[index];
             
-            let search_result = current_node.actions.unpackage_all().binary_search(&action);
+            let search_result = current_node.actions.unpackage_all().iter().position(|a| *a == action);
             
-            if search_result.is_err() {
-                return Err(format!("Bro, this {action:?} is NOT a real action."));
+            if search_result.is_none() {
+                return Err(format!("Bro, {:?} is NOT a real action. Can't push range lock on that!", action));
             }
 
             let new_node = &current_node.children[search_result.unwrap()];
@@ -558,10 +558,10 @@ impl ActionTree {
         {
             let action = vine[index];
             
-            let search_result = &current_node.actions.unpackage_all().binary_search(&action);
+            let search_result = &current_node.actions.unpackage_all().iter().position(|a| *a == action);
             
-            if search_result.is_err() {
-                return Err(format!("Bro, this {action:?} is NOT a real action."));
+            if search_result.is_none() {
+                return Err(format!("Bro, {:?} is NOT a real action. Can't push rule lock on that!", action));
             }
 
             let new_node = &current_node.children[search_result.unwrap()];
@@ -629,9 +629,9 @@ impl ActionTree {
             let action = vine[0];
             vine.remove(0);
             
-            let search_result = &current_node.actions.unpackage_all().binary_search(&action);
-            if search_result.is_err() {
-                panic!("Bro, this is NOT a real action. Can't pull that!");
+            let search_result = &current_node.actions.unpackage_all().iter().position(|a| *a == action);
+            if search_result.is_none() {
+                panic!("Bro, {:?} is NOT a real action. Can't pull that!", action);
             }
 
             let new_node = &current_node.children[search_result.unwrap()];
