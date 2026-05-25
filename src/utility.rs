@@ -7,6 +7,7 @@ use std::ptr;
 #[cfg(feature = "custom-alloc")]
 use crate::alloc::*;
 
+use rayon::iter::MinLen;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
@@ -873,39 +874,153 @@ where
     <T as GamePair>::G: Game<P = T>,
     <T as GamePair>::N: GameNode<P = T>
     {
-    const VERBOSE: bool = true;
+    const VERBOSE: bool = false;
     
     // node-locking
     let mut lrange_owned = node.my_end_range(game);
     let mut llimit_owned = node.my_end_limit(game);
 
-    if lrange_owned.len() > 0
-    {
-        lrange_owned = game.cut_them_locks(lrange_owned, node.player());
-        llimit_owned = game.cut_them_locks(llimit_owned, node.player());
-        
-        if VERBOSE { println!("apply_locking_strategy: d & r & t length: {} {} {}", dst.len(), lrange_owned.clone().len(), llimit_owned.clone().len()); }
-        
-        let lrange: &mut [f32] = &mut lrange_owned;
-        let llimit: &mut [i8] = &mut llimit_owned;
-        
-        dst.iter_mut().zip(lrange).zip(llimit).map(|((d, r), l)| (d, r, l)).for_each(|(d, r, l)| {
-            if *l == 0
-            {
-                if VERBOSE { println!("strict ranging detected"); }
 
-                *d = *r;
-            }
-            else if *l == -1
-            {
-                if VERBOSE { println!("underranging detected"); }
 
-                if *d > *r {*d = *r;}
-            }
-            else if *l == 1
+    // locking itself
+
+    lrange_owned = game.cut_them_locks(lrange_owned, node.player());
+    llimit_owned = game.cut_them_locks(llimit_owned, node.player());
+        
+    if VERBOSE { println!("apply_locking_strategy: d & r & t length: {} {} {}", dst.len(), lrange_owned.clone().len(), llimit_owned.clone().len()); }
+        
+    let lrange: &mut [f32] = &mut lrange_owned;
+    let llimit: &mut [i8] = &mut llimit_owned;
+        
+    dst.iter_mut().zip(lrange).zip(llimit).map(|((d, r), l)| (d, r, l)).for_each(|(d, r, l)| {
+        if *l == 0
+        {
+            if VERBOSE { println!("strict ranging detected"); }
+
+            *d = *r;
+        }
+        else if *l == -1
+        {
+            if VERBOSE { println!("underranging detected"); }
+
+            if *d > *r {*d = *r;}
+        }
+        else if *l == 1
+        {
+            if *d < *r {*d = *r;}
+        }
+    });
+
+
+
+    // fixing over and underdriving
+
+    let cut_size = dst.len() / node.num_actions();
+    let mut fix_attempts = 0;
+    
+    loop {
+        let mut badsize = false;
+
+        for i in 0..cut_size
+        {   
+            let mut nodefreq = 0.0;
+
+            let mut max_locked_freq = 0.0;
+            let mut max_locked_ids = Vec::new() as Vec<usize>;
+
+            let mut min_locked_freq = 0.0;
+            let mut min_locked_ids = Vec::new() as Vec<usize>;
+
+            for j in 0..node.num_actions()
             {
-                if *d < *r {*d = *r;}
+                nodefreq += dst[i + j * cut_size];
+
+                if llimit_owned[i + j * cut_size] == 0
+                {
+                    max_locked_freq += lrange_owned[i + j * cut_size];
+                    max_locked_ids.push(j);
+
+                    min_locked_freq += lrange_owned[i + j * cut_size];
+                    min_locked_ids.push(j);
+                }
+                else if llimit_owned[i + j * cut_size] == 1
+                {
+                    if dst[i + j * cut_size] == lrange_owned[i + j * cut_size]
+                    {
+                        max_locked_freq += lrange_owned[i + j * cut_size];
+                        max_locked_ids.push(j);
+                    }
+                }
+                else
+                {
+                    if dst[i + j * cut_size] == lrange_owned[i + j * cut_size]
+                    {
+                        min_locked_freq += lrange_owned[i + j * cut_size];
+                        min_locked_ids.push(j);
+                    }
+                }
             }
-        });
+
+            if nodefreq != 100.0
+            {
+                badsize = true;
+
+                if nodefreq > 100.0 // overdrive
+                {
+                    let multiplier = (100.0 - max_locked_freq) / (nodefreq - max_locked_freq);
+
+                    for j in 0..node.num_actions()
+                    {
+                        let this_id = i + j * cut_size;
+
+                        if !max_locked_ids.contains(&j)
+                        {
+                            dst[this_id] *= multiplier;
+
+                            if llimit_owned[this_id] == 1 && dst[this_id] < lrange_owned[this_id]
+                            {
+                                dst[this_id] = lrange_owned[this_id];
+                            }
+                        }
+                    }
+                }
+                else // underdrive
+                {
+                    let multiplier = (100.0 - min_locked_freq) / (nodefreq - min_locked_freq);
+
+                    for j in 0..node.num_actions()
+                    {
+                        let this_id = i + j * cut_size;
+
+                        if !min_locked_ids.contains(&j)
+                        {
+                            dst[this_id] *= multiplier;
+
+                            if llimit_owned[this_id] == -1 && dst[this_id] > lrange_owned[this_id]
+                            {
+                                dst[this_id] = lrange_owned[this_id];
+                            }
+                        }
+                    }
+                }
+            }
+
+
+        }
+
+        if !badsize
+        {
+            break
+        }
+        else
+        {
+            if fix_attempts >= 100
+            {
+                panic!("Too many fixing attempts, something is certainly not working");
+            }
+            fix_attempts += 1;
+        }
+        
     }
+
 }
