@@ -485,9 +485,10 @@ impl ActionTree {
         let current_node: MutexGuardLike<ActionTreeNode>;
         current_node = if node.is_some() { node.unwrap().lock() } else { self.root.lock() };
 
+        println!("{:?}", index);
         println!("{:?}", current_node.actions);
         println!("{:?}", current_node.children);
-        println!("{:?}", index);
+        
         
         if vine.len() == 0
         {
@@ -500,14 +501,13 @@ impl ActionTree {
 
             return self.pull_range_lock_recursive(line, index, Some(new_node));
         }
-
-        if vine.len()-1 > index
+        else if vine.len()-1 > index
         {
             let action = vine[index];
             
-            let search_result = current_node.actions.unpackage_all().binary_search(&action);
-            if search_result.is_err() {
-                panic!("Bro, this is NOT a real action. Can't pull that!");
+            let search_result = current_node.actions.unpackage_all().iter().position(|a| *a == action);
+            if search_result.is_none() {
+                panic!("Bro, {:?} is NOT a real action. Can't pull that!", action);
             }
 
             let new_node = &current_node.children[search_result.unwrap()];
