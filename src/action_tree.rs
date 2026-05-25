@@ -253,7 +253,7 @@ pub struct ActionTree {
     history: Vec<Action>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[cfg_attr(feature = "bincode", derive(Decode, Encode))]
 pub struct ActionTreeNode {
     pub(crate) player: u8,
@@ -484,6 +484,9 @@ impl ActionTree {
 
         let current_node: MutexGuardLike<ActionTreeNode>;
         current_node = if node.is_some() { node.unwrap().lock() } else { self.root.lock() };
+
+        println!("{:?}", current_node);
+        println!("{:?}", index);
          
         if vine.len() == 0
         {
