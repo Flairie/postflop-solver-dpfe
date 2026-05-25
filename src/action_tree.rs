@@ -788,6 +788,7 @@ impl ActionTree {
     pub fn pull_range_lock_from_current_node(&self) ->  (Option<Vec<f32>>, Option<Vec<i8>>) 
     {
         let history = self.history.clone();
+        println!("{:?}", history);
         self.pull_range_lock_recursive(&history, 0, None)
     }
 
