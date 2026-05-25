@@ -626,7 +626,7 @@ impl ActionTree {
 
         if vine.len() - 1 > index
         {
-            let action = vine[0];
+            let action = vine[index];
             vine.remove(0);
             
             let search_result = &current_node.actions.unpackage_all().iter().position(|a| *a == action);
