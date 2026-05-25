@@ -485,9 +485,10 @@ impl ActionTree {
         let current_node: MutexGuardLike<ActionTreeNode>;
         current_node = if node.is_some() { node.unwrap().lock() } else { self.root.lock() };
 
-        println!("{:?}", current_node);
+        println!("{:?}", current_node.actions);
+        println!("{:?}", current_node.children);
         println!("{:?}", index);
-         
+        
         if vine.len() == 0
         {
             panic!("Empty tree in pull_range_lock! How did we even get here?!");
