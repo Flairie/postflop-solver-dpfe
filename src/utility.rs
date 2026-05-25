@@ -963,10 +963,16 @@ where
 
             if nodefreq != 1.0
             {
+                println!("{nodefreq}? This is some BAD size! Off to fix it!");
                 badsize = true;
 
                 if nodefreq > 1.0 // overdrive
                 {
+                    if max_locked_freq > 1.0
+                    {
+                        panic!("Oookay, seriously? {max_locked_freq} as max frequency?! You think you are funny? You think this is some kind of joke? This is not a joke, this is serious business! Please fix your locking strategy, because it is just not working! If you think you are doing something clever by locking too much, you are just ruining everything! Please, for the love of all that is good and holy, fix your locking strategy! I am begging you! This is just not acceptable! {max_locked_freq}?! Are you kidding me?! This is just outrageous! Please, please, please fix your locking strategy! I cannot stress this enough! This is just not okay! {max_locked_freq}?! This is just unbelievable!");
+                    }
+
                     let multiplier = (1.0 - max_locked_freq) / (nodefreq - max_locked_freq);
                     // println!("markiplier: {}", multiplier);
 
@@ -987,6 +993,10 @@ where
                 }
                 else // underdrive
                 {
+                    if min_locked_freq > 1.0
+                    {
+                        panic!("Oookay, seriously? {min_locked_freq} as min frequency?! You went all that way just to underdrive to {min_locked_freq}?! Are you insane or just trolling me? This is just not acceptable! Please, for the love of God, fix your locking strategy! I am going to call the police and I am NOT bluffing! The app should have prevented this from even taking off, but you somehow managed to underdrive to {min_locked_freq}?! This is just outrageous! Please, please, please fix your locking strategy! This is just unbelievable!");
+                    }
                     let multiplier = (1.0 - min_locked_freq) / (nodefreq - min_locked_freq);
 
                     for j in 0..node.num_actions()
