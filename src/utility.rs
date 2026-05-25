@@ -968,6 +968,7 @@ where
                 if nodefreq > 100.0 // overdrive
                 {
                     let multiplier = (100.0 - max_locked_freq) / (nodefreq - max_locked_freq);
+                    println!("markiplier: {}", multiplier);
 
                     for j in 0..node.num_actions()
                     {
@@ -1004,8 +1005,10 @@ where
                     }
                 }
             }
-
-
+            else
+            {
+                println!("{}? Sounds good enough to me!", nodefreq);
+            }
         }
 
         if !badsize
