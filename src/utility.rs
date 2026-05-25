@@ -919,6 +919,7 @@ where
     
     loop {
         let mut badsize = false;
+        let mut edit_history = vec![vec![]; cut_size] as Vec<Vec<(f32, f32)>>;
 
         for i in 0..cut_size
         {   
@@ -962,7 +963,7 @@ where
 
             if nodefreq != 1.0
             {
-                println!("{nodefreq}? This is some BAD size! Off to fix it!");
+                println!("{nodefreq}? This is some BAD size! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]);
                 badsize = true;
 
                 if nodefreq > 1.0 // overdrive
@@ -974,6 +975,8 @@ where
 
                     let multiplier = (1.0 - max_locked_freq) / (nodefreq - max_locked_freq);
                     println!("markiplier: {}", multiplier);
+
+                    edit_history[i].push((nodefreq, multiplier));
 
                     for j in 0..node.num_actions()
                     {
@@ -996,8 +999,11 @@ where
                     {
                         panic!("Oookay, seriously? {min_locked_freq} as min frequency?! You went all that way just to underdrive to {min_locked_freq}?! Are you insane or just trolling me? This is just not acceptable! Please, for the love of God, fix your locking strategy! I am going to call the police and I am NOT bluffing! The app should have prevented this from even taking off, but you somehow managed to underdrive to {min_locked_freq}?! This is just outrageous! Please, please, please fix your locking strategy! This is just unbelievable!");
                     }
+
                     let multiplier = (1.0 - min_locked_freq) / (nodefreq - min_locked_freq);
                     println!("markiplier: {}", multiplier);
+
+                    edit_history[i].push((nodefreq, multiplier));
 
                     for j in 0..node.num_actions()
                     {
@@ -1032,7 +1038,7 @@ where
                 panic!("Too many fixing attempts, something is certainly not working");
             }
             fix_attempts += 1;
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            std::thread::sleep(std::time::Duration::from_secs(10));
         }
         
     }
