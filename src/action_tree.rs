@@ -95,6 +95,7 @@ impl PackagedAction {
         self.action
     }
 
+    /// sort rules by priority if it's not None, do nothing if it is None
     pub fn sort_rules(&mut self)
     {
         if self.lock_rules.is_some()
@@ -247,7 +248,7 @@ pub struct ActionTree {
     config: TreeConfig,
     added_lines: Vec<Vec<Action>>,
     removed_lines: Vec<Vec<Action>>,
-    locked_lines: Vec<Vec<Action>>, // i am not pulling those recursively so we need to keep track of them somewhere
+    locked_lines: MutexLike<Vec<Vec<Action>>>, // i am not pulling those recursively so we need to keep track of them somewhere
     root: Box<MutexLike<ActionTreeNode>>,
     history: Vec<Action>,
 }
@@ -396,19 +397,19 @@ impl ActionTree {
     #[inline]
     pub fn push_range_lock_recursive // kill me
     (
-        &mut self, 
+        &self, 
         line: &[Action], 
         lock_range: Vec<f32>, 
         lock_limit: Vec<i8>,
-        index: usize
+        index: usize,
+        node: Option<&MutexLike<ActionTreeNode>>
     ) -> Result<(), String> {
 
         let vine = line.to_vec();
 
         let mut current_node: MutexGuardLike<ActionTreeNode>;
-        current_node = self.root.lock();
+        current_node = if node.is_some() {node.unwrap().lock()} else {self.root.lock()};
         
-
         if vine.len() == 0
         {
             return Err("Empty tree in push_range_lock! How did we even get here?!".to_owned());
@@ -424,7 +425,9 @@ impl ActionTree {
                 return Err(format!("Bro, this {action:?} is NOT a real action."));
             }
 
-            return self.push_range_lock_recursive(line, lock_range, lock_limit, index+1);
+            let new_node = &current_node.children[search_result.unwrap()];
+
+            return self.push_range_lock_recursive(line, lock_range, lock_limit, index+1, Some(new_node));
         }
         else
         {
@@ -443,9 +446,11 @@ impl ActionTree {
                     current_node.actions[i].lock_range = Some(arrange);
                     current_node.actions[i].lock_limit = Some(arrimit);
 
-                    if !self.locked_lines.iter().any(|l| l == line)
+                    let mut locked_lines = self.locked_lines.lock();
+
+                    if !locked_lines.iter().any(|l| l == line)
                     {
-                        self.locked_lines.push(line.to_vec());
+                        locked_lines.push(line.to_vec());
                     }
 
                     success = true;
@@ -467,17 +472,17 @@ impl ActionTree {
     /// - `line` must exist in the current tree.
     /// - Chance actions (i.e., dealing turn and river cards) must be omitted from the `line`.
     #[inline]
-    pub fn pull_range_lock_recursive(&self, line: &[Action], index: usize) -> (Option<Vec<f32>>, Option<Vec<i8>>) {
+    pub fn pull_range_lock_recursive(&self, line: &[Action], index: usize, node: Option<&MutexLike<ActionTreeNode>>) -> (Option<Vec<f32>>, Option<Vec<i8>>) {
         let vine = line.to_vec();
 
         let current_node: MutexGuardLike<ActionTreeNode>;
-        current_node = self.root.lock();
+        current_node = if node.is_some() { node.unwrap().lock() } else { self.root.lock() };
          
         if vine.len() == 0
         {
             panic!("Empty tree in pull_range_lock! How did we even get here?!");
         }
-        
+
         if vine.len()-1 > index
         {
             let action = vine[index];
@@ -487,7 +492,9 @@ impl ActionTree {
                 panic!("Bro, this is NOT a real action. Can't pull that!");
             }
 
-            return self.pull_range_lock_recursive(line, index+1);
+            let new_node = &current_node.children[search_result.unwrap()];
+
+            return self.pull_range_lock_recursive(line, index+1, Some(new_node));
         }
         else
         {
@@ -511,11 +518,11 @@ impl ActionTree {
     /// - `line` must exist in the current tree.
     /// - Chance actions (i.e., dealing turn and river cards) must be omitted from the `line`.
     #[inline]
-    pub fn push_rule_lock_recursive(&mut self, line: &[Action], lock_rules: Option<Vec<RuleLock>>, index: usize) -> Result<(), String> {
+    pub fn push_rule_lock_recursive(&self, line: &[Action], lock_rules: Option<Vec<RuleLock>>, index: usize, node: Option<&MutexLike<ActionTreeNode>>) -> Result<(), String> {
         let vine = line.to_vec();
 
         let mut current_node: MutexGuardLike<ActionTreeNode>;
-        current_node = self.root.lock();
+        current_node = if node.is_some() { node.unwrap().lock() } else { self.root.lock() };
         
         if vine.len() == 0
         {
@@ -532,7 +539,9 @@ impl ActionTree {
                 return Err(format!("Bro, this {action:?} is NOT a real action."));
             }
 
-            return self.push_rule_lock_recursive(line, lock_rules, index+1);
+            let new_node = &current_node.children[search_result.unwrap()];
+
+            return self.push_rule_lock_recursive(line, lock_rules, index+1, Some(new_node));
         }
         else
         {
@@ -543,9 +552,11 @@ impl ActionTree {
             {
                 if current_node.actions[i].action == action
                 {
-                    if !self.locked_lines.iter().any(|l| l == line)
+                    let mut locked_lines = self.locked_lines.lock();
+
+                    if !locked_lines.iter().any(|l| l == line)
                     {
-                        self.locked_lines.push(line.to_vec());
+                        locked_lines.push(line.to_vec());
                     }
                     
                     current_node.actions[i].lock_rules = lock_rules;
@@ -569,11 +580,11 @@ impl ActionTree {
     /// - `line` must exist in the current tree.
     /// - Chance actions (i.e., dealing turn and river cards) must be omitted from the `line`.
     #[inline]
-    pub fn pull_rule_lock_recursive(&self, line: &[Action], index: usize) -> Option<Vec<RuleLock>> {
+    pub fn pull_rule_lock_recursive(&self, line: &[Action], index: usize, node: Option<&MutexLike<ActionTreeNode>>) -> Option<Vec<RuleLock>> {
         let mut vine = line.to_vec();
 
         let current_node: MutexGuardLike<ActionTreeNode>;
-        current_node = self.root.lock();
+        current_node = if node.is_some() { node.unwrap().lock() } else { self.root.lock() };
         
 
         if vine.len() == 0
@@ -591,7 +602,9 @@ impl ActionTree {
                 panic!("Bro, this is NOT a real action. Can't pull that!");
             }
 
-            return self.pull_rule_lock_recursive(line, index+1);
+            let new_node = &current_node.children[search_result.unwrap()];
+
+            return self.pull_rule_lock_recursive(line, index+1, Some(new_node));
         }
         else
         {
@@ -736,7 +749,7 @@ impl ActionTree {
     pub fn push_range_lock_on_current_node(&mut self, lock_range: Vec<f32>, lock_limit: Vec<i8>) -> Result<(), String> 
     {
         let history = self.history.clone();
-        self.push_range_lock_recursive(&history, lock_range, lock_limit, 0)
+        self.push_range_lock_recursive(&history, lock_range, lock_limit, 0, None)
     }
 
     /// Pulls range masks from the current line.
@@ -747,7 +760,7 @@ impl ActionTree {
     pub fn pull_range_lock_from_current_node(&self) ->  (Option<Vec<f32>>, Option<Vec<i8>>) 
     {
         let history = self.history.clone();
-        self.pull_range_lock_recursive(&history, 0)
+        self.pull_range_lock_recursive(&history, 0, None)
     }
 
     /// Pushes rules onto the current line.
@@ -758,7 +771,7 @@ impl ActionTree {
     pub fn push_rule_lock_on_current_node(&mut self, lock_rules: Option<Vec<RuleLock>>) -> Result<(), String> 
     {
         let history = self.history.clone();
-        self.push_rule_lock_recursive(&history, lock_rules, 0)
+        self.push_rule_lock_recursive(&history, lock_rules, 0, None)
     }
 
     /// Pulls rules from the current line.
@@ -769,7 +782,7 @@ impl ActionTree {
     pub fn pull_rule_lock_from_current_node(&self) ->  Option<Vec<RuleLock>>
     {
         let history = self.history.clone();
-        self.pull_rule_lock_recursive(&history, 0)
+        self.pull_rule_lock_recursive(&history, 0, None)
     }
 
     // apparently i forgor to extract the damn locks and they were never applied, insert deep fried laughing emoji
@@ -778,10 +791,10 @@ impl ActionTree {
         let mut range_locks = Vec::new() as Vec<(Vec<Action>, Vec<f32>, Vec<i8>)>;
         let mut rule_locks = Vec::new() as Vec<(Vec<Action>, Vec<RuleLock>)>;
 
-        for locked_line in &self.locked_lines
+        for locked_line in unsafe{ self.locked_lines.yoink() }
         {
-            let (range_lock, limit_lock) = self.pull_range_lock_recursive(locked_line, 0);
-            let rule_lock = self.pull_rule_lock_recursive(locked_line, 0);
+            let (range_lock, limit_lock) = self.pull_range_lock_recursive(locked_line, 0, None);
+            let rule_lock = self.pull_rule_lock_recursive(locked_line, 0, None);
 
             if range_lock.is_some() && limit_lock.is_some()
             {
