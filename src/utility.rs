@@ -961,14 +961,14 @@ where
                 }
             }
 
-            if nodefreq != 100.0
+            if nodefreq != 1.0
             {
                 badsize = true;
 
-                if nodefreq > 100.0 // overdrive
+                if nodefreq > 1.0 // overdrive
                 {
-                    let multiplier = (100.0 - max_locked_freq) / (nodefreq - max_locked_freq);
-                    println!("markiplier: {}", multiplier);
+                    let multiplier = (1.0 - max_locked_freq) / (nodefreq - max_locked_freq);
+                    // println!("markiplier: {}", multiplier);
 
                     for j in 0..node.num_actions()
                     {
@@ -987,7 +987,7 @@ where
                 }
                 else // underdrive
                 {
-                    let multiplier = (100.0 - min_locked_freq) / (nodefreq - min_locked_freq);
+                    let multiplier = (1.0 - min_locked_freq) / (nodefreq - min_locked_freq);
 
                     for j in 0..node.num_actions()
                     {
@@ -1007,7 +1007,7 @@ where
             }
             else
             {
-                println!("{}? Sounds good enough to me!", nodefreq);
+                //println!("{}? Sounds good enough to me!", nodefreq);
             }
         }
 
