@@ -1001,8 +1001,8 @@ where
             {
                 badsize = true;
 
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                println!("{nodefreq}? This is some BAD size on {i}! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]);
+                //std::thread::sleep(std::time::Duration::from_secs(1));
+                //println!("{nodefreq}? This is some BAD size on {i}! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]);
 
                 if nodefreq > 1.0 // overdrive
                 {
@@ -1031,6 +1031,17 @@ where
                     if min_locked_freq > 1.0
                     {
                         panic!("Oookay, seriously? {min_locked_freq} as min frequency?! You went all that way just to underdrive to {min_locked_freq}?! Are you insane or just trolling me? This is just not acceptable! Please, for the love of God, fix your locking strategy! I am going to call the police and I am NOT bluffing! The app should have prevented this from even taking off, but you somehow managed to underdrive to {min_locked_freq}?! This is just outrageous! Please, please, please fix your locking strategy! This is just unbelievable!");
+                    }
+
+                    if min_locked_freq == nodefreq // such a skill issue
+                    {
+                        for j in 0..node.num_actions()
+                        {
+                            if dst[i + j * cut_size] == 0.0
+                            {
+                                dst[i + j * cut_size] = 1.0; // compensatory
+                            }
+                        }
                     }
 
                     let multiplier = (1.0 - min_locked_freq) / (nodefreq - min_locked_freq);
@@ -1062,7 +1073,7 @@ where
 
         if !badsize
         {
-            println!("good job! over.");
+            //println!("good job! over.");
             break
         }
         else
