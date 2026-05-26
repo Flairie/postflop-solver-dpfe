@@ -904,6 +904,11 @@ where
         }
 
         dead_hands[i] = is_dead;
+
+        if is_dead
+        {
+            println!("DEAD!");
+        }
     }
 
 
@@ -996,8 +1001,8 @@ where
             {
                 badsize = true;
 
-                //std::thread::sleep(std::time::Duration::from_secs(1));
-                //println!("{nodefreq}? This is some BAD size on {i}! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]);
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                println!("{nodefreq}? This is some BAD size on {i}! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]);
 
                 if nodefreq > 1.0 // overdrive
                 {
