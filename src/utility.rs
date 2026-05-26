@@ -876,15 +876,39 @@ where
     const VERBOSE: bool = false;
     
     // node-locking
-    let mut lrange_owned = node.my_end_range(game);
+
+    let mut lrange_owned: Vec<f32> = node.my_end_range(game);
     let mut llimit_owned = node.my_end_limit(game);
+
+    lrange_owned = game.cut_them_locks(lrange_owned, node.player());
+    llimit_owned = game.cut_them_locks(llimit_owned, node.player());
+
+
+    // saving dead hands as they are going to cause an apocalypse without that
+
+    let cut_size = dst.len() / node.num_actions();
+    let mut fix_attempts = 0;
+
+    let mut dead_hands: Vec<bool> = vec![false; cut_size];
+
+    for i in 0..cut_size
+    {
+        let mut is_dead = true;
+
+        for j in 0..node.num_actions()
+        {
+            if dst[j * cut_size + i] > 0.0
+            {
+                is_dead = false;
+            }
+        }
+
+        dead_hands[i] = is_dead;
+    }
 
 
 
     // locking itself
-
-    lrange_owned = game.cut_them_locks(lrange_owned, node.player());
-    llimit_owned = game.cut_them_locks(llimit_owned, node.player());
         
     if VERBOSE { println!("apply_locking_strategy: d & r & t length: {} {} {}", dst.len(), lrange_owned.clone().len(), llimit_owned.clone().len()); }
         
@@ -913,9 +937,6 @@ where
 
 
     // fixing over and underdriving
-
-    let cut_size = dst.len() / node.num_actions();
-    let mut fix_attempts = 0;
     
     loop {
         let mut badsize = false;
@@ -930,6 +951,16 @@ where
 
             let mut min_locked_freq = 0.0;
             let mut min_locked_ids = Vec::new() as Vec<usize>;
+
+            if dead_hands[i]
+            {
+                for j in 0..node.num_actions()
+                {
+                    dst[i + j * cut_size] = 0.0;
+                }
+
+                continue
+            }
 
             for j in 0..node.num_actions()
             {
@@ -963,18 +994,15 @@ where
 
             if nodefreq != 1.0
             {
-                println!("{nodefreq}? This is some BAD size! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]);
                 badsize = true;
+
+                //std::thread::sleep(std::time::Duration::from_secs(1));
+                //println!("{nodefreq}? This is some BAD size on {i}! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]);
 
                 if nodefreq > 1.0 // overdrive
                 {
-                    if max_locked_freq > 1.0
-                    {
-                        panic!("Oookay, seriously? {max_locked_freq} as max frequency?! You think you are funny? You think this is some kind of joke? This is not a joke, this is serious business! Please fix your locking strategy, because it is just not working! If you think you are doing something clever by locking too much, you are just ruining everything! Please, for the love of all that is good and holy, fix your locking strategy! I am begging you! This is just not acceptable! {max_locked_freq}?! Are you kidding me?! This is just outrageous! Please, please, please fix your locking strategy! I cannot stress this enough! This is just not okay! {max_locked_freq}?! This is just unbelievable!");
-                    }
-
                     let multiplier = (1.0 - max_locked_freq) / (nodefreq - max_locked_freq);
-                    println!("markiplier: {}", multiplier);
+                    //println!("markiplier: {}", multiplier);
 
                     edit_history[i].push((nodefreq, multiplier));
 
@@ -1001,7 +1029,7 @@ where
                     }
 
                     let multiplier = (1.0 - min_locked_freq) / (nodefreq - min_locked_freq);
-                    println!("markiplier: {}", multiplier);
+                    //println!("markiplier: {}", multiplier);
 
                     edit_history[i].push((nodefreq, multiplier));
 
@@ -1023,7 +1051,7 @@ where
             }
             else
             {
-                println!("{}? Sounds good enough to me!", nodefreq);
+                //println!("{}? Sounds good enough to me!", nodefreq);
             }
         }
 
@@ -1038,7 +1066,6 @@ where
                 panic!("Too many fixing attempts, something is certainly not working");
             }
             fix_attempts += 1;
-            std::thread::sleep(std::time::Duration::from_secs(10));
         }
         
     }
