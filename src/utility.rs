@@ -1062,6 +1062,7 @@ where
 
         if !badsize
         {
+            println!("good job! over.");
             break
         }
         else
