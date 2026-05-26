@@ -1001,8 +1001,8 @@ where
             {
                 badsize = true;
 
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                println!("{nodefreq}? This is some BAD size on {i}! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]);
+                //std::thread::sleep(std::time::Duration::from_secs(1));
+                //println!("{nodefreq}? This is some BAD size on {i}! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]);
 
                 if nodefreq > 1.0 // overdrive
                 {
@@ -1040,6 +1040,7 @@ where
                             if dst[i + j * cut_size] == 0.0
                             {
                                 dst[i + j * cut_size] = 1.0; // compensatory
+                                nodefreq += 1.0;
                             }
                         }
                     }
@@ -1073,7 +1074,7 @@ where
 
         if !badsize
         {
-            println!("good job! over.");
+            //println!("good job! over.");
             break
         }
         else
