@@ -285,7 +285,7 @@ where
                 *x += (*y as f32) * decoder;
             });
 
-            if end_range != BLANK_NLR || end_limit == BLANK_NLL {
+            if end_range != BLANK_NLR || end_limit != BLANK_NLL {
                 strategy.iter_mut().zip(end_range).zip(end_limit).map(|((d, r), l)| (d, r, l)).for_each(|(d, r, l)| {
                     if !(*l == 1 && *r == 0.0)
                     {
