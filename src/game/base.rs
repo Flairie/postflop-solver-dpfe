@@ -531,10 +531,6 @@ impl PostFlopGame {
             self.isomorphism_card_river,
             self.isomorphism_swap_river,
         ) = self.card_config.isomorphism(&self.private_cards);
-
-        
-        println!("{:?}", self.isomorphism_card_turn);
-        println!("{:?}", self.isomorphism_card_river);
     }
 
     /// Initializes the root node of game tree.
@@ -753,7 +749,7 @@ impl PostFlopGame {
     // ONE THREAD AT A TIME PLEASE
     fn lock_them_nodes(&self, buffer: &BufferContainer)
     {
-        const VERBOSE: bool = false;
+        const VERBOSE: bool = true;
 
         if VERBOSE { println!("lock_them_nodes: me: {:?}", unsafe { self.mrstorage.yoink() }); }
 
@@ -1548,8 +1544,6 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
 
         if packaged_action.lock_rules.is_some() && packaged_action.lock_rules.as_ref().unwrap().len() > 0
         {
-            println!("push_nodelocks: Ruling the rule");
-
             let rule_num = packaged_action.lock_rules.as_ref().unwrap().len();
             let rules = packaged_action.lock_rules.as_ref().unwrap().clone();
 
@@ -1770,8 +1764,6 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                     }}
                 }
             } }
-            
-            println!("apply_range: result range: {:?}", end_range);
 
             if lock_range != RANGEEMPTY && VERBOSE
             {
@@ -2118,8 +2110,6 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
 
     fn evaluate_straight(hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
     {
-        println!("straight eval start");
-
         let mut cards = vec![hand.0, hand.1];
         cards.extend(board);
         cards.sort_unstable_by(|a, b| a.cmp(&b)); // ascending order because can override stuff for free
@@ -2370,8 +2360,6 @@ fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
 
         return false;
     }
-
-    println!("{:?}", ret);
 
     ret
 }
@@ -2655,6 +2643,7 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
                 }
             }
         }
+        
         
         // dgsd
         for i in 0..(compboard_depaired.len()-4)
