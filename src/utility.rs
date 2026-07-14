@@ -949,6 +949,8 @@ where
 
         for i in 0..cut_size
         {   
+            const VERBOSE: bool = true;
+
             let mut nodefreq = 0.0;
 
             let mut max_locked_freq = 0.0;
@@ -1001,13 +1003,13 @@ where
             {
                 badsize = true;
 
-                //std::thread::sleep(std::time::Duration::from_secs(1));
-                //println!("{nodefreq}? This is some BAD size on {i}! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]);
+                if VERBOSE { std::thread::sleep(std::time::Duration::from_secs(1)); }
+                if VERBOSE { println!("{nodefreq}? This is some BAD size on {i}! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]); }
 
                 if nodefreq > 1.0 // overdrive
                 {
                     let multiplier = (1.0 - max_locked_freq) / (nodefreq - max_locked_freq);
-                    //println!("markiplier: {}", multiplier);
+                    if VERBOSE { println!("markiplier: {}", multiplier); }
 
                     edit_history[i].push((nodefreq, multiplier));
 
@@ -1046,7 +1048,7 @@ where
                     }
 
                     let multiplier = (1.0 - min_locked_freq) / (nodefreq - min_locked_freq);
-                    //println!("markiplier: {}", multiplier);
+                    if VERBOSE { println!("markiplier: {}", multiplier); }
 
                     edit_history[i].push((nodefreq, multiplier));
 
@@ -1068,13 +1070,13 @@ where
             }
             else
             {
-                //println!("{}? Sounds good enough to me!", nodefreq);
+                if VERBOSE { println!("{}? Sounds good enough to me!", nodefreq); }
             }
         }
 
         if !badsize
         {
-            //println!("good job! over.");
+            if VERBOSE { println!("good job! over."); }
             break
         }
         else
