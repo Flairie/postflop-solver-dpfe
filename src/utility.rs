@@ -944,13 +944,17 @@ where
     // fixing over and underdriving
     
     loop {
+        const VERBOSE: bool = true;
+
+        if VERBOSE { std::thread::sleep(std::time::Duration::from_millis(150)); }
+        if VERBOSE { println!("FIXING ATTEMPT {fix_attempts}"); }
+
+
         let mut badsize = false;
         let mut edit_history = vec![vec![]; cut_size] as Vec<Vec<(f32, f32)>>;
 
         for i in 0..cut_size
         {   
-            const VERBOSE: bool = true;
-
             let mut nodefreq = 0.0;
 
             let mut max_locked_freq = 0.0;
