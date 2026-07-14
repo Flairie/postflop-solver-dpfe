@@ -1003,7 +1003,7 @@ where
             {
                 badsize = true;
 
-                if VERBOSE { std::thread::sleep(std::time::Duration::from_secs(1)); }
+                if VERBOSE { std::thread::sleep(std::time::Duration::from_millis(25)); }
                 if VERBOSE { println!("{nodefreq}? This is some BAD size on {i}! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]); }
 
                 if nodefreq > 1.0 // overdrive
