@@ -749,7 +749,7 @@ impl PostFlopGame {
     // ONE THREAD AT A TIME PLEASE
     fn lock_them_nodes(&self, buffer: &BufferContainer)
     {
-        const VERBOSE: bool = true;
+        const VERBOSE: bool = false;
 
         if VERBOSE { println!("lock_them_nodes: me: {:?}", unsafe { self.mrstorage.yoink() }); }
 
@@ -1517,7 +1517,7 @@ impl PostFlopGame {
 
 fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame, p_actions: Vec<PackagedAction>)
 {
-    const VERBOSE: bool = false;
+    const VERBOSE: bool = true;
 
     if VERBOSE { println!("push_nodelocks: Starting packing it up!"); }
 
