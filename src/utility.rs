@@ -944,7 +944,7 @@ where
     // fixing over and underdriving
     
     loop {
-        const VERBOSE: bool = true;
+        const VERBOSE: bool = false;
 
         if VERBOSE { std::thread::sleep(std::time::Duration::from_millis(150)); }
         if VERBOSE { println!("FIXING ATTEMPT {fix_attempts}"); }
