@@ -1003,6 +1003,8 @@ where
                 }
             }
 
+            nodefreq = (nodefreq * 1000.0).round() / 1000.0; // we must round or it will just die in an infinite loop of multiplying on 1.0000000001 and 0.9999999999 and never reach 1.0
+
             if nodefreq != 1.0
             {
                 badsize = true;
