@@ -1517,7 +1517,7 @@ impl PostFlopGame {
 
 fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame, p_actions: Vec<PackagedAction>)
 {
-    const VERBOSE: bool = true;
+    const VERBOSE: bool = false;
 
     if VERBOSE { println!("push_nodelocks: Starting packing it up!"); }
 
@@ -1612,16 +1612,16 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
             (end_range, end_limit) = apply_range(packaged_action.clone(), end_range, end_limit, [true; RANGESIZE]);
         }
         
-
+        let vb_worthy: bool = VERBOSE && (end_range != [0.0; RANGESIZE] || end_limit != [1; RANGESIZE]);
 
         let mut hasher: DefaultHasher;
-        let unsigned_range: Vec<u32> = end_range.iter().map(|f| *f as u32).collect();
+        let unsigned_range: Vec<u32> = end_range.iter().map(|f| (*f).to_bits()).collect();
 
         hasher = DefaultHasher::new();
         unsigned_range.hash(&mut hasher);
         let range_hash = hasher.finish();
         
-        if VERBOSE { println!("my_end_range: range hash: {:}", range_hash); }
+        if VERBOSE && vb_worthy { println!("my_end_range: range hash: {:}", range_hash); }
 
         hasher = DefaultHasher::new();
         end_limit.hash(&mut hasher);
@@ -1655,7 +1655,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
         mr_data.push(r_loc as u32);
         ml_data.push(l_loc as u32);
 
-        if VERBOSE { println!("push_nodelocks: Action packed"); }
+        if VERBOSE && vb_worthy { println!("push_nodelocks: Action packed"); }
     }
     
     if VERBOSE { println!("my_end_range: mr_data: {:?}", mr_data); }
