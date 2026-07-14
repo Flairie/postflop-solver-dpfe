@@ -1888,7 +1888,16 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
             else if rule_type.0 == 5
 
             {
-                // board texture processing
+                let trvth_bits = evaluate_board(board);
+
+                if rule_type.2 == 0
+                {
+                    trvthgrid[i] = check_bit(trvth_bits, rule_type.1);
+                }
+                else
+                {
+                    trvthgrid[i] = !check_bit(trvth_bits, rule_type.1);
+                }
             }
         }
 
@@ -2386,6 +2395,342 @@ fn evaluate_class (hand: &(Card, Card)) -> u8
     }
 }
 
+/// board eval
+fn evaluate_board (board: &Vec<Card>) -> u64
+{
+    let mut trvth_bits: u64 = 0;
+
+    let mut cards = board.clone();
+    cards.sort_unstable_by(|a, b| b.cmp(&a));
+
+    let board_ranks = derank(&cards);
+    let board_ranks_reversed = {
+        let mut tmp = board_ranks.clone();
+        tmp.reverse();
+        tmp
+    };
+
+
+    // board suits evaluation
+
+    {
+        let mut suit_counts = [0; 4];
+        for &card in &cards
+        {
+            let suit = card % 4;
+            suit_counts[suit as usize] += 1;
+        }
+        suit_counts.sort_unstable_by(|a, b| b.cmp(&a));
+
+        if suit_counts[0] == 1
+        {
+            trvth_bits |= 1 << 0; // rainbow
+        }
+        else if suit_counts[0] == 2
+        {
+            trvth_bits |= 1 << 21; // flush draw
+
+            if suit_counts[1] == 2
+            {
+                trvth_bits |= 1 << 22; // two flush draws
+            }
+        }
+        else if suit_counts[0] == 3
+        {
+            trvth_bits |= 1 << 23; // three card flush
+            trvth_bits |= 1 << 1; // flush possible
+        }
+        else if suit_counts[0] == 4
+        {
+            trvth_bits |= 1 << 24; // four card flush
+            trvth_bits |= 1 << 1; // flush possible
+        }
+        else if suit_counts[0] == 5
+        {
+            trvth_bits |= 1 << 25; // board flush
+            trvth_bits |= 1 << 1; // flush possible
+        }
+    }
+
+    // evaluating repeats
+
+    {
+        let mut repeats = u32::MAX;
+        let mut repeats_rank = u8::MAX;
+
+        let mut repeat_data = vec![];
+
+        for i in 0..board_ranks.len()
+        {
+            let rank = board_ranks[i];
+
+            if repeats_rank != rank
+            {
+                if repeats != u32::MAX
+                {
+                    repeat_data.push(repeats);
+                }
+
+                repeats = 1;
+                repeats_rank = rank;
+            }
+            else
+            {
+                repeats += 1;
+            }
+        }
+        repeat_data.push(repeats);
+        repeat_data.sort_unstable_by(|a, b| b.cmp(&a));
+
+        if repeat_data[0] == 1
+        {
+            trvth_bits |= 1 << 3; // repeats on the board
+
+            if repeat_data[1] == 1
+            {
+                trvth_bits |= 1 << 11; // paired board
+            }
+            else 
+            {
+                trvth_bits |= 1 << 12; // double paired board
+            }
+        }
+        else if repeat_data[0] == 3
+        {
+            trvth_bits |= 1 << 3; // repeats on the board
+
+            if repeat_data[1] == 1
+            {
+                trvth_bits |= 1 << 13; // trip board
+            }
+            else
+            {
+                trvth_bits |= 1 << 14; // boat board
+            }
+        }
+        else if repeat_data[0] == 4
+        {
+            trvth_bits |= 1 << 3; // repeats on the board
+            trvth_bits |= 1 << 15; // quad board
+        }
+    }
+
+    // evaluating straight potential
+
+    {
+        //// PATTERN LIBRARY
+
+        // gapped 3-straights
+        const G3_PATTERNS: [[u8; 2]; 5] = [
+            [3, 1],
+            [1, 3],
+            [2, 2],
+            [2, 1],
+            [1, 2]
+        ];
+
+        // no gap 3-straight
+        const NG3_PATTERN: [u8; 2] = [1, 1];
+
+        // gapped 4-straights
+        const G4_PATTERNS: [[u8; 3]; 3] = [
+            [2, 1, 1],
+            [1, 2, 1],
+            [1, 1, 2]
+        ];
+
+        // no gap 4-straight
+        const NG4_PATTERN: [u8; 3] = [1, 1, 1];
+
+        // board straight
+        const BS_PATTERN: [u8; 4] = [1, 1, 1, 1];
+
+
+
+        //// ACTUALLY PROCESSING
+        
+        let mut done = false;
+
+        // board straight detection
+
+        if board_ranks_reversed.len() == 5
+        {
+            let board_pattern = [
+                board_ranks_reversed[1] - board_ranks_reversed[0],
+                board_ranks_reversed[2] - board_ranks_reversed[1],
+                board_ranks_reversed[3] - board_ranks_reversed[2],
+                board_ranks_reversed[4] - board_ranks_reversed[3]
+            ];
+
+            if board_pattern == BS_PATTERN
+            {
+                trvth_bits |= 1 << 2; // straight possible
+                done = true;
+            }
+        }
+
+        // 4 card straight detection
+
+        if !done
+        {
+            if board_ranks_reversed.len() == 5
+            {
+                let mut present = false;
+                let mut nogap = false;
+
+                for i in 0..2
+                {
+                    let board_pattern = [
+                        board_ranks_reversed[i + 1] - board_ranks_reversed[i],
+                        board_ranks_reversed[i + 2] - board_ranks_reversed[i + 1],
+                        board_ranks_reversed[i + 3] - board_ranks_reversed[i + 2]
+                    ];
+
+                    if board_pattern == NG4_PATTERN
+                    {
+                        present = true;
+                        nogap = true;
+                    }
+                    else if G4_PATTERNS.contains(&board_pattern)
+                    {
+                        present = true;
+                    }
+                }
+
+                if present
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 34; // 4 card straight any
+
+                    if nogap
+                    {
+                        trvth_bits |= 1 << 35; // 4 card straight no gap
+                    }
+
+                    done = true;
+                }
+            }
+            else if board_ranks_reversed.len() == 4
+            {
+                let board_pattern = [
+                    board_ranks_reversed[1] - board_ranks_reversed[0],
+                    board_ranks_reversed[2] - board_ranks_reversed[1],
+                    board_ranks_reversed[3] - board_ranks_reversed[2]
+                ];
+
+                if board_pattern == NG4_PATTERN
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 34; // 4 card straight any
+                    trvth_bits |= 1 << 35; // 4 card straight no gap
+
+                    done = true;
+                }
+                else if G4_PATTERNS.contains(&board_pattern)
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 34; // 4 card straight any
+
+                    done = true;
+                }
+            }
+        }
+
+        // 3 card straight detection
+
+        if !done
+        {
+            if board_ranks_reversed.len() >= 4
+            {
+                let needed = board_ranks_reversed.len() - 2;
+
+                let mut present = false;
+                let mut nogap = false;
+
+                for i in 0..needed
+                {
+                    let board_pattern = [
+                        board_ranks_reversed[i + 1] - board_ranks_reversed[i],
+                        board_ranks_reversed[i + 2] - board_ranks_reversed[i + 1]
+                    ];
+
+                    if board_pattern == NG3_PATTERN
+                    {
+                        present = true;
+                        nogap = true;
+                    }
+                    else if G3_PATTERNS.contains(&board_pattern)
+                    {
+                        present = true;
+                    }
+                }
+
+                if present
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 32; // 3 card straight any
+
+                    if nogap
+                    {
+                        trvth_bits |= 1 << 33; // 3 card straight no gap
+                    }
+
+                    done = true;
+                }
+            }
+            else
+            {
+                let board_pattern = [
+                    board_ranks_reversed[1] - board_ranks_reversed[0],
+                    board_ranks_reversed[2] - board_ranks_reversed[1]
+                ];
+
+                if board_pattern == NG3_PATTERN
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 32; // 3 card straight any
+                    trvth_bits |= 1 << 33; // 3 card straight no gap
+
+                    done = true;
+                }
+                else if G3_PATTERNS.contains(&board_pattern)
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 32; // 3 card straight any
+
+                    done = true;
+                }
+            }
+
+        }
+
+        // is the board a connected board
+
+        if !done
+        {
+            let needed = board_ranks_reversed.len() - 1;
+
+            for i in 0..needed
+            {
+                let gap = board_ranks_reversed[i + 1] - board_ranks_reversed[i];
+
+                if gap == 1
+                {
+                    trvth_bits |= 1 << 31; // connected
+                    break;
+                }
+            }
+        }
+    }
+
+    trvth_bits
+}
+
+fn check_bit (bits: u64, bit_id: u8) -> bool
+{
+    let mask = 1 << bit_id;
+    bits & mask != 0
+}
 
 /// draw eval
 fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 5])
