@@ -1866,7 +1866,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                 
             }
 
-            else if rule_type.0 == 4
+            else if rule_type.0 == 4 // draw checker
 
             {
                 let data = evaluate_draw(&index_to_card_pair(i), board);
@@ -1885,7 +1885,7 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                 }
             }
 
-            else if rule_type.0 == 5
+            else if rule_type.0 == 5 // board state checker
 
             {
                 let trvth_bits = evaluate_board(board);
@@ -1897,6 +1897,25 @@ fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame,
                 else
                 {
                     trvthgrid[i] = !check_bit(trvth_bits, rule_type.1);
+                }
+            }
+
+            else if rule_type.0 == 6 // late street card checker
+
+            {
+                if board.len() >= 4 && rule_type.1 != 2
+                {
+                    if board[3] >> 2 == rule_type.2
+                    {
+                        trvthgrid[i] = true;
+                    }
+                }
+                if board.len() == 5 && rule_type.1 != 1
+                {
+                    if board[4] >> 2 == rule_type.2
+                    {
+                        trvthgrid[i] = true;
+                    }
                 }
             }
         }
