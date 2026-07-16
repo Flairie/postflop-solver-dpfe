@@ -1,5 +1,6 @@
 use super::*;
 use crate::bunching::*;
+use crate::hand;
 use crate::interface::*;
 use crate::utility::*;
 use crate::card::*;
@@ -2572,13 +2573,15 @@ fn evaluate_board (board: &Vec<Card>) -> u64
 
         // board straight detection
 
-        if board_ranks_reversed.len() == 5
+        let board_depaired = depair(&board_ranks_reversed);
+
+        if board_depaired.len() == 5
         {
             let board_pattern = [
-                board_ranks_reversed[1] - board_ranks_reversed[0],
-                board_ranks_reversed[2] - board_ranks_reversed[1],
-                board_ranks_reversed[3] - board_ranks_reversed[2],
-                board_ranks_reversed[4] - board_ranks_reversed[3]
+                board_depaired[1] - board_depaired[0],
+                board_depaired[2] - board_depaired[1],
+                board_depaired[3] - board_depaired[2],
+                board_depaired[4] - board_depaired[3]
             ];
 
             if board_pattern == BS_PATTERN
@@ -2593,7 +2596,7 @@ fn evaluate_board (board: &Vec<Card>) -> u64
 
         if !done
         {
-            if board_ranks_reversed.len() == 5
+            if board_depaired.len() == 5
             {
                 let mut present = false;
                 let mut nogap = false;
@@ -2601,9 +2604,9 @@ fn evaluate_board (board: &Vec<Card>) -> u64
                 for i in 0..2
                 {
                     let board_pattern = [
-                        board_ranks_reversed[i + 1] - board_ranks_reversed[i],
-                        board_ranks_reversed[i + 2] - board_ranks_reversed[i + 1],
-                        board_ranks_reversed[i + 3] - board_ranks_reversed[i + 2]
+                        board_depaired[i + 1] - board_depaired[i],
+                        board_depaired[i + 2] - board_depaired[i + 1],
+                        board_depaired[i + 3] - board_depaired[i + 2]
                     ];
 
                     if board_pattern == NG4_PATTERN
@@ -2630,12 +2633,12 @@ fn evaluate_board (board: &Vec<Card>) -> u64
                     done = true;
                 }
             }
-            else if board_ranks_reversed.len() == 4
+            else if board_depaired.len() == 4
             {
                 let board_pattern = [
-                    board_ranks_reversed[1] - board_ranks_reversed[0],
-                    board_ranks_reversed[2] - board_ranks_reversed[1],
-                    board_ranks_reversed[3] - board_ranks_reversed[2]
+                    board_depaired[1] - board_depaired[0],
+                    board_depaired[2] - board_depaired[1],
+                    board_depaired[3] - board_depaired[2]
                 ];
 
                 if board_pattern == NG4_PATTERN
@@ -2660,9 +2663,9 @@ fn evaluate_board (board: &Vec<Card>) -> u64
 
         if !done
         {
-            if board_ranks_reversed.len() >= 4
+            if board_depaired.len() >= 4
             {
-                let needed = board_ranks_reversed.len() - 2;
+                let needed = board_depaired.len() - 2;
 
                 let mut present = false;
                 let mut nogap = false;
@@ -2670,8 +2673,8 @@ fn evaluate_board (board: &Vec<Card>) -> u64
                 for i in 0..needed
                 {
                     let board_pattern = [
-                        board_ranks_reversed[i + 1] - board_ranks_reversed[i],
-                        board_ranks_reversed[i + 2] - board_ranks_reversed[i + 1]
+                        board_depaired[i + 1] - board_depaired[i],
+                        board_depaired[i + 2] - board_depaired[i + 1]
                     ];
 
                     if board_pattern == NG3_PATTERN
@@ -2701,8 +2704,8 @@ fn evaluate_board (board: &Vec<Card>) -> u64
             else
             {
                 let board_pattern = [
-                    board_ranks_reversed[1] - board_ranks_reversed[0],
-                    board_ranks_reversed[2] - board_ranks_reversed[1]
+                    board_depaired[1] - board_depaired[0],
+                    board_depaired[2] - board_depaired[1]
                 ];
 
                 if board_pattern == NG3_PATTERN
@@ -2728,13 +2731,13 @@ fn evaluate_board (board: &Vec<Card>) -> u64
 
         if !done
         {
-            let needed = board_ranks_reversed.len() - 1;
+            let needed = board_depaired.len() - 1;
 
             for i in 0..needed
             {
-                let gap = board_ranks_reversed[i + 1] - board_ranks_reversed[i];
+                let gap = board_depaired[i + 1] - board_depaired[i];
 
-                if gap == 1 && board_ranks_reversed[i] > 2 && board_ranks_reversed[i + 1] < 10
+                if gap == 1 && board_depaired[i] > 2 && board_depaired[i + 1] < 10
                 {
                     trvth_bits |= 1 << 31; // connected
                     break;
@@ -2833,11 +2836,21 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
         compboard.sort_unstable_by(|a, b| a.cmp(&b));
 
         let compboard_processed = depair(&derank(&compboard));
-        let compboard_depaired = depair_suited(&compboard);
+        let compboard_card_counts = card_counts(&derank(&compboard));
 
-        const GPATTERN_1: [u8; 3] = [2, 1, 1];
-        const GPATTERN_2: [u8; 3] = [1, 2, 1];
-        const GPATTERN_3: [u8; 3] = [1, 1, 2];
+        let hand_deranked = derank(&vec![hand.0, hand.1]);
+
+        let pocket_pair;
+        if hand_deranked[0] == hand_deranked[1]
+        {
+            pocket_pair = hand_deranked[0];
+        }
+        else
+        {
+            pocket_pair = u8::MAX;
+        }
+
+        const GPATTERNS: [[u8; 3]; 3] = [[2, 1, 1], [1, 2, 1], [1, 1, 2]];
 
         if compboard_processed.len() < 4
         {
@@ -2882,31 +2895,36 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
                 compboard_processed[i+3]-compboard_processed[i+2]
             ];
 
-            if mask == GPATTERN_1 || mask == GPATTERN_2 || mask == GPATTERN_3
-            {
-                let mut isone = false;
+            let section = [
+                compboard_processed[i],
+                compboard_processed[i+1],
+                compboard_processed[i+2],
+                compboard_processed[i+3]
+            ];
 
-                if
-                    compboard_depaired[i] == hand.0 ||
-                    compboard_depaired[i+1] == hand.0 ||
-                    compboard_depaired[i+2] == hand.0 ||
-                    compboard_depaired[i+3] == hand.0
+            if GPATTERNS.contains(&mask)
+            {
+                if 
+                    pocket_pair != u8::MAX && 
+                    section.contains(&pocket_pair) && 
+                    compboard_card_counts[pocket_pair as usize] == 2
                 {
                     ret.0 = true;
-                    isone = true;
                 }
-
-                if
-                    compboard_depaired[i] == hand.1 ||
-                    compboard_depaired[i+1] == hand.1 ||
-                    compboard_depaired[i+2] == hand.1 ||
-                    compboard_depaired[i+3] == hand.1
+                else if pocket_pair == u8::MAX
                 {
-                    if isone
+                    if
+                        section.contains(&(hand_deranked[0])) &&
+                        section.contains(&(hand_deranked[1])) &&
+                        compboard_card_counts[hand_deranked[0] as usize] == 1 &&
+                        compboard_card_counts[hand_deranked[1] as usize] == 1
                     {
+                        ret.0 = true;
                         ret.1 = true;
                     }
-                    else
+                    else if
+                        (section.contains(&(hand_deranked[0])) && compboard_card_counts[hand_deranked[0] as usize] == 1) ||
+                        (section.contains(&(hand_deranked[1])) && compboard_card_counts[hand_deranked[1] as usize] == 1)
                     {
                         ret.0 = true;
                     }
@@ -2954,8 +2972,21 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
         compboard.sort_unstable_by(|a, b| a.cmp(&b));
 
         let compboard_processed = depair(&derank(&compboard));
-        let compboard_depaired = depair_suited(&compboard);
-        const OEMASK: [u8; 3] = [1, 1, 1];
+        let compboard_card_counts = card_counts(&derank(&compboard));
+
+        let hand_deranked = derank(&vec![hand.0, hand.1]);
+        
+        let pocket_pair;
+        if hand_deranked[0] == hand_deranked[1]
+        {
+            pocket_pair = hand_deranked[0];
+        }
+        else
+        {
+            pocket_pair = u8::MAX;
+        }
+
+        const OEPATTERN: [u8; 3] = [1, 1, 1];
         const DGPATTERN: [u8; 4] = [2, 1, 1, 2];
 
         if compboard_processed.len() < 4
@@ -2964,7 +2995,7 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
         }
 
         // normal openender
-        for i in 0..(compboard_depaired.len()-3)
+        for i in 0..(compboard_processed.len()-3)
         {
             if compboard_processed[i] == 0 && compboard_processed[i+3] == 12
             {
@@ -2977,31 +3008,36 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
                 compboard_processed[i+3]-compboard_processed[i+2]
             ];
 
-            if mask == OEMASK
-            {
-                let mut isone = false;
+            let section = [
+                compboard_processed[i],
+                compboard_processed[i+1],
+                compboard_processed[i+2],
+                compboard_processed[i+3]
+            ];
 
+            if mask == OEPATTERN
+            {
                 if
-                    compboard_depaired[i] == hand.0 ||
-                    compboard_depaired[i+1] == hand.0 ||
-                    compboard_depaired[i+2] == hand.0 ||
-                    compboard_depaired[i+3] == hand.0
+                    pocket_pair != u8::MAX && 
+                    compboard_card_counts[pocket_pair as usize] == 2 &&
+                    section.contains(&pocket_pair)
                 {
                     ret.0 = true;
-                    isone = true;
                 }
-
-                if
-                    compboard_depaired[i] == hand.1 ||
-                    compboard_depaired[i+1] == hand.1 ||
-                    compboard_depaired[i+2] == hand.1 ||
-                    compboard_depaired[i+3] == hand.1
+                else if pocket_pair == u8::MAX
                 {
-                    if isone
+                    if
+                        section.contains(&(hand_deranked[0])) &&
+                        section.contains(&(hand_deranked[1])) &&
+                        compboard_card_counts[hand_deranked[0] as usize] == 1 &&
+                        compboard_card_counts[hand_deranked[1] as usize] == 1
                     {
+                        ret.0 = true;
                         ret.1 = true;
                     }
-                    else
+                    else if
+                        (section.contains(&(hand_deranked[0])) && compboard_card_counts[hand_deranked[0] as usize] == 1) ||
+                        (section.contains(&(hand_deranked[1])) && compboard_card_counts[hand_deranked[1] as usize] == 1)
                     {
                         ret.0 = true;
                     }
@@ -3009,9 +3045,13 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
             }
         }
         
+        if compboard_processed.len() < 5
+        {
+            return ret;
+        }
         
         // dgsd
-        for i in 0..(compboard_depaired.len()-4)
+        for i in 0..(compboard_processed.len()-4)
         {
             let mask = [
                 compboard_processed[i+1]-compboard_processed[i],
@@ -3020,33 +3060,37 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
                 compboard_processed[i+4]-compboard_processed[i+3]
             ];
 
+            let section = [
+                compboard_processed[i],
+                compboard_processed[i+1],
+                compboard_processed[i+2],
+                compboard_processed[i+3],
+                compboard_processed[i+4]
+            ];
+
             if mask == DGPATTERN
             {
-                let mut isone = false;
-
                 if
-                    compboard_depaired[i] == hand.0 ||
-                    compboard_depaired[i+1] == hand.0 ||
-                    compboard_depaired[i+2] == hand.0 ||
-                    compboard_depaired[i+3] == hand.0 ||
-                    compboard_depaired[i+4] == hand.0
+                    pocket_pair != u8::MAX && 
+                    compboard_card_counts[pocket_pair as usize] == 2 &&
+                    section.contains(&pocket_pair)
                 {
                     ret.0 = true;
-                    isone = true;
                 }
-
-                if
-                    compboard_depaired[i] == hand.1 ||
-                    compboard_depaired[i+1] == hand.1 ||
-                    compboard_depaired[i+2] == hand.1 ||
-                    compboard_depaired[i+3] == hand.1 ||
-                    compboard_depaired[i+4] == hand.1
+                else if pocket_pair == u8::MAX
                 {
-                    if isone
+                    if
+                        section.contains(&(hand_deranked[0])) &&
+                        section.contains(&(hand_deranked[1])) &&
+                        compboard_card_counts[hand_deranked[0] as usize] == 1 &&
+                        compboard_card_counts[hand_deranked[1] as usize] == 1
                     {
+                        ret.0 = true;
                         ret.1 = true;
                     }
-                    else
+                    else if
+                        (section.contains(&(hand_deranked[0])) && compboard_card_counts[hand_deranked[0] as usize] == 1) ||
+                        (section.contains(&(hand_deranked[1])) && compboard_card_counts[hand_deranked[1] as usize] == 1)
                     {
                         ret.0 = true;
                     }
@@ -3107,7 +3151,7 @@ fn derank(cards: &Vec<u8>) -> Vec<u8>
     deranked
 }
 
-/// Removes paires from deranked and sorted card vec
+/// Removes pairs from deranked and sorted card vec
 fn depair(cards: &Vec<u8>) -> Vec<u8>
 {
     let mut depaired: Vec<u8> = vec![];
@@ -3126,24 +3170,15 @@ fn depair(cards: &Vec<u8>) -> Vec<u8>
     depaired
 }
 
-
-/// depair but for suited vectors
-fn depair_suited(cards: &Vec<u8>) -> Vec<u8>
+/// Returns an array of counts for each rank that appear in a sorted deranked card vector.
+fn card_counts(cards: &Vec<u8>) -> [u8; 13]
 {
-    let mut depaired: Vec<u8> = vec![];
-
-    let mut last_rank = u8::MAX;
+    let mut counts = [0; 13];
 
     for card in cards
     {
-        let rank = card >> 2;
-
-        if rank != last_rank
-        {
-            depaired.push(*card);
-            last_rank = rank;
-        }
+        counts[*card as usize] += 1;
     }
 
-    depaired
+    counts
 }
