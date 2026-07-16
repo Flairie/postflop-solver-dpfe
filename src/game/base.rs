@@ -2715,7 +2715,7 @@ fn evaluate_board (board: &Vec<Card>) -> u64
             {
                 let gap = board_ranks_reversed[i + 1] - board_ranks_reversed[i];
 
-                if gap == 1 && board_ranks_reversed[i] > 1 && board_ranks_reversed[i + 1] < 11
+                if gap == 1 && board_ranks_reversed[i] > 2 && board_ranks_reversed[i + 1] < 10
                 {
                     trvth_bits |= 1 << 31; // connected
                     break;
