@@ -3083,10 +3083,17 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
             {
                 if !(section_core.contains(&(hand_deranked[0])) || section_core.contains(&(hand_deranked[1])))
                 {
-                    if !(hand_deranked.contains(&section_outs[0]) || !hand_deranked.contains(&section_outs[1]))
+                    if 
+                        !(
+                            hand_deranked.contains(&section_outs[0]) && 
+                            hand_deranked.contains(&section_outs[1]) &&
+                            compboard_card_counts[hand_deranked[0] as usize] == 1 &&
+                            compboard_card_counts[hand_deranked[1] as usize] == 1
+                        )
                     {
                         continue; // it is either a normal gutshot or no gutshot at all since we don't care about draws to board straights
                     }
+                    
                 }
 
                 if
