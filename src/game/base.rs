@@ -3068,8 +3068,27 @@ fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 
                 compboard_processed[i+4]
             ];
 
+            let section_core = [
+                compboard_processed[i+1],
+                compboard_processed[i+2],
+                compboard_processed[i+3]
+            ];
+
+            let section_outs = [
+                compboard_processed[i],
+                compboard_processed[i+4]
+            ];
+
             if mask == DGPATTERN
             {
+                if !(section_core.contains(&(hand_deranked[0])) || section_core.contains(&(hand_deranked[1])))
+                {
+                    if !(hand_deranked.contains(&section_outs[0]) || !hand_deranked.contains(&section_outs[1]))
+                    {
+                        continue; // it is either a normal gutshot or no gutshot at all since we don't care about draws to board straights
+                    }
+                }
+
                 if
                     pocket_pair != u8::MAX && 
                     compboard_card_counts[pocket_pair as usize] == 2 &&
