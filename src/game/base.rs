@@ -2482,7 +2482,7 @@ fn evaluate_board (board: &Vec<Card>) -> u64
         repeat_data.push(repeats);
         repeat_data.sort_unstable_by(|a, b| b.cmp(&a));
 
-        if repeat_data[0] == 1
+        if repeat_data[0] == 2
         {
             trvth_bits |= 1 << 3; // repeats on the board
 
@@ -2565,6 +2565,7 @@ fn evaluate_board (board: &Vec<Card>) -> u64
             if board_pattern == BS_PATTERN
             {
                 trvth_bits |= 1 << 2; // straight possible
+                trvth_bits |= 1 << 36; // board straight
                 done = true;
             }
         }
@@ -2714,7 +2715,7 @@ fn evaluate_board (board: &Vec<Card>) -> u64
             {
                 let gap = board_ranks_reversed[i + 1] - board_ranks_reversed[i];
 
-                if gap == 1
+                if gap == 1 && board_ranks_reversed[i] > 1 && board_ranks_reversed[i + 1] < 11
                 {
                     trvth_bits |= 1 << 31; // connected
                     break;
