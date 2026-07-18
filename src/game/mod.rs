@@ -3,6 +3,7 @@ mod evaluation;
 mod interpreter;
 mod node;
 mod icm;
+mod lock_police;
 mod node_eval;
 
 #[cfg(feature = "bincode")]
