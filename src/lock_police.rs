@@ -232,7 +232,7 @@ impl PostFlopGame
                 }
                 if max_lock < 1.0
                 {
-                    underdrives -= 1;
+                    underdrives += 1;
                 }
             }
 
