@@ -111,6 +111,10 @@ pub fn police_locks_strings(tree: MutexGuard<ActionTree>, card_config: &CardConf
                     new_vec.push(generic_error);
                 }
             }
+            else
+            {
+                new_vec.push(error.clone());
+            }
         }
 
         error_vec = new_vec;
