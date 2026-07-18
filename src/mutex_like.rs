@@ -49,6 +49,18 @@ impl<T> MutexLike<T> {
             data: UnsafeCell::new(val),
         }
     }
+
+    #[inline]
+    pub fn into_inner(self) -> T { 
+        self.data.into_inner()
+    }
+
+    // allows to get immutable data from a mutexlike without ugly lock deref sequence
+    #[inline]
+    pub unsafe fn yoink<'a>(&self) -> &T { 
+        &(*self.data.get())
+    }
+
 }
 
 impl<T: ?Sized> MutexLike<T> {

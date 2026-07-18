@@ -2,15 +2,10 @@ use std::alloc::{self, AllocError, Allocator, Layout};
 use std::cell::RefCell;
 use std::ptr::NonNull;
 use std::slice;
+use crate::utility::align_up;
 
 const ALIGNMENT: usize = 16;
 const STACK_UNIT: usize = 1 << 20; // 1MB
-
-#[inline]
-pub(crate) fn align_up(size: usize) -> usize {
-    let mask = ALIGNMENT - 1;
-    (size + mask) & !mask
-}
 
 /// A custom memory allocator that allocates memory in a stack-like manner.
 ///

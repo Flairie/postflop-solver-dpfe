@@ -10,6 +10,24 @@ use crate::alloc::*;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
+
+const ALIGNMENT: usize = 16;
+#[inline]
+pub(crate) fn align_up(size: usize) -> usize {
+    let mask = ALIGNMENT - 1;
+    (size + mask) & !mask
+}
+#[inline]
+pub(crate) fn align_up_turbo(addr: usize, size: usize) -> usize {
+    let byteshit: usize = ALIGNMENT - ((addr + size) % ALIGNMENT);
+
+    size + byteshit
+}
+
+pub(crate) const RANGESIZE: usize = 52 * 51 / 2;
+pub(crate) const BLANK_NLR: [f32; RANGESIZE] = [0.0; RANGESIZE];
+pub(crate) const BLANK_NLL: [i8; RANGESIZE] = [1; RANGESIZE];
+
 /// Executes `op` for each child potentially in parallel.
 #[cfg(feature = "rayon")]
 #[inline]
@@ -242,7 +260,13 @@ pub(crate) fn apply_swap<T>(slice: &mut [T], swap_list: &[(u16, u16)]) {
 
 /// Finalizes the solving process.
 #[inline]
-pub fn finalize<T: Game>(game: &mut T) {
+pub fn finalize<T: GamePair>(game: &mut T::G)
+where
+    T: GamePair,
+    <T as GamePair>::G: Game<P = T>,
+    <T as GamePair>::N: GameNode<P = T>
+{
+
     if game.is_solved() {
         panic!("Game is already solved");
     }
@@ -254,7 +278,7 @@ pub fn finalize<T: Game>(game: &mut T) {
     // compute the expected values and save them
     for player in 0..2 {
         let mut cfvalues = Vec::with_capacity(game.num_private_hands(player));
-        compute_cfvalue_recursive(
+        compute_cfvalue_recursive::<T>(
             cfvalues.spare_capacity_mut(),
             game,
             &mut game.root(),
@@ -276,16 +300,21 @@ pub fn finalize<T: Game>(game: &mut T) {
 
 /// Computes the exploitability of the current strategy.
 #[inline]
-pub fn compute_exploitability<T: Game>(game: &T) -> f32 {
+pub fn compute_exploitability<T: GamePair>(game: &T::G) -> f32 
+where
+    T: GamePair,
+    <T as GamePair>::G: Game<P = T>,
+    <T as GamePair>::N: GameNode<P = T>
+    {
     if !game.is_ready() && !game.is_solved() {
         panic!("Game is not ready");
     }
 
-    let mes_ev = compute_mes_ev(game);
+    let mes_ev = compute_mes_ev::<T>(game);
     if !game.is_raked() {
         (mes_ev[0] + mes_ev[1]) * 0.5
     } else {
-        let current_ev = compute_current_ev(game);
+        let current_ev = compute_current_ev::<T>(game);
         ((mes_ev[0] - current_ev[0]) + (mes_ev[1] - current_ev[1])) * 0.5
     }
 }
@@ -295,7 +324,12 @@ pub fn compute_exploitability<T: Game>(game: &T) -> f32 {
 /// The bias, i.e., (starting pot) / 2, is already subtracted to increase the significant figures.
 /// This treatment makes the return value zero-sum when not raked.
 #[inline]
-pub fn compute_current_ev<T: Game>(game: &T) -> [f32; 2] {
+pub fn compute_current_ev<T: GamePair>(game: &T::G) -> [f32; 2] 
+where
+    T: GamePair,
+    <T as GamePair>::G: Game<P = T>,
+    <T as GamePair>::N: GameNode<P = T>
+    {
     if !game.is_ready() && !game.is_solved() {
         panic!("Game is not ready");
     }
@@ -308,7 +342,7 @@ pub fn compute_current_ev<T: Game>(game: &T) -> [f32; 2] {
     let reach = [game.initial_weights(0), game.initial_weights(1)];
 
     for player in 0..2 {
-        compute_cfvalue_recursive(
+        compute_cfvalue_recursive::<T>(
             cfvalues[player].spare_capacity_mut(),
             game,
             &mut game.root(),
@@ -328,7 +362,12 @@ pub fn compute_current_ev<T: Game>(game: &T) -> [f32; 2] {
 /// The bias, i.e., (starting pot) / 2, is already subtracted to increase the significant figures.
 /// Therefore, the average of the return value corresponds to the exploitability value if not raked.
 #[inline]
-pub fn compute_mes_ev<T: Game>(game: &T) -> [f32; 2] {
+pub fn compute_mes_ev<T: GamePair>(game: &T::G) -> [f32; 2] 
+where
+    T: GamePair,
+    <T as GamePair>::G: Game<P = T>,
+    <T as GamePair>::N: GameNode<P = T>
+    {
     if !game.is_ready() && !game.is_solved() {
         panic!("Game is not ready");
     }
@@ -341,7 +380,7 @@ pub fn compute_mes_ev<T: Game>(game: &T) -> [f32; 2] {
     let reach = [game.initial_weights(0), game.initial_weights(1)];
 
     for player in 0..2 {
-        compute_best_cfv_recursive(
+        compute_best_cfv_recursive::<T>(
             cfvalues[player].spare_capacity_mut(),
             game,
             &game.root(),
@@ -356,14 +395,19 @@ pub fn compute_mes_ev<T: Game>(game: &T) -> [f32; 2] {
 }
 
 /// The recursive helper function for computing the counterfactual values of the given strategy.
-fn compute_cfvalue_recursive<T: Game>(
+fn compute_cfvalue_recursive<T: GamePair>(
     result: &mut [MaybeUninit<f32>],
-    game: &T,
-    node: &mut T::Node,
+    game: &T::G,
+    node: &mut T::N,
     player: usize,
     cfreach: &[f32],
     save_cfvalues: bool,
-) {
+) 
+where
+    T: GamePair,
+    <T as GamePair>::G: Game<P = T>,
+    <T as GamePair>::N: GameNode<P = T>
+{
     // terminal node
     if node.is_terminal() {
         game.evaluate(result, node, player, cfreach);
@@ -395,7 +439,7 @@ fn compute_cfvalue_recursive<T: Game>(
 
         // compute the counterfactual values of each action
         for_each_child(node, |action| {
-            compute_cfvalue_recursive(
+            compute_cfvalue_recursive::<T>(
                 row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                 game,
                 &mut node.play(action),
@@ -453,7 +497,7 @@ fn compute_cfvalue_recursive<T: Game>(
     else if node.player() == player {
         // compute the counterfactual values of each action
         for_each_child(node, |action| {
-            compute_cfvalue_recursive(
+            compute_cfvalue_recursive::<T>(
                 row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                 game,
                 &mut node.play(action),
@@ -476,10 +520,9 @@ fn compute_cfvalue_recursive<T: Game>(
         } else {
             normalized_strategy(node.strategy(), num_actions)
         };
-
+        
         // node-locking
-        let locking = game.locking_strategy(node);
-        apply_locking_strategy(&mut strategy, locking);
+        apply_locking_strategy::<T>(&mut strategy, node, game);
 
         // sum up the counterfactual values
         let mut cfv_actions = cfv_actions.lock();
@@ -499,7 +542,7 @@ fn compute_cfvalue_recursive<T: Game>(
     // opponent node
     else if num_actions == 1 {
         // simply recurse when the number of actions is one
-        compute_cfvalue_recursive(
+        compute_cfvalue_recursive::<T>(
             result,
             game,
             &mut node.play(0),
@@ -523,8 +566,8 @@ fn compute_cfvalue_recursive<T: Game>(
         };
 
         // node-locking
-        let locking = game.locking_strategy(node);
-        apply_locking_strategy(&mut cfreach_actions, locking);
+        
+        apply_locking_strategy::<T>(&mut cfreach_actions, node, game);
 
         // update the reach probabilities
         let row_size = cfreach.len();
@@ -534,7 +577,7 @@ fn compute_cfvalue_recursive<T: Game>(
 
         // compute the counterfactual values of each action
         for_each_child(node, |action| {
-            compute_cfvalue_recursive(
+            compute_cfvalue_recursive::<T>(
                 row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                 game,
                 &mut node.play(action),
@@ -563,13 +606,18 @@ fn compute_cfvalue_recursive<T: Game>(
 }
 
 /// The recursive helper function for computing the counterfactual values of best response.
-fn compute_best_cfv_recursive<T: Game>(
+fn compute_best_cfv_recursive<T: GamePair>(
     result: &mut [MaybeUninit<f32>],
-    game: &T,
-    node: &T::Node,
+    game: &T::G,
+    node: &T::N,
     player: usize,
     cfreach: &[f32],
-) {
+)
+where
+    T: GamePair,
+    <T as GamePair>::G: Game<P = T>,
+    <T as GamePair>::N: GameNode<P = T>
+{
     // terminal node
     if node.is_terminal() {
         game.evaluate(result, node, player, cfreach);
@@ -582,7 +630,7 @@ fn compute_best_cfv_recursive<T: Game>(
     // simply recurse when the number of actions is one
     if num_actions == 1 && !node.is_chance() {
         let child = &node.play(0);
-        compute_best_cfv_recursive(result, game, child, player, cfreach);
+        compute_best_cfv_recursive::<T>(result, game, child, player, cfreach);
         return;
     }
 
@@ -608,7 +656,7 @@ fn compute_best_cfv_recursive<T: Game>(
 
         // compute the counterfactual values of each action
         for_each_child(node, |action| {
-            compute_best_cfv_recursive(
+            compute_best_cfv_recursive::<T>(
                 row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                 game,
                 &node.play(action),
@@ -654,7 +702,7 @@ fn compute_best_cfv_recursive<T: Game>(
     else if node.player() == player {
         // compute the counterfactual values of each action
         for_each_child(node, |action| {
-            compute_best_cfv_recursive(
+            compute_best_cfv_recursive::<T>(
                 row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                 game,
                 &node.play(action),
@@ -663,16 +711,18 @@ fn compute_best_cfv_recursive<T: Game>(
             )
         });
 
-        let locking = game.locking_strategy(node);
         let mut cfv_actions = cfv_actions.lock();
         unsafe { cfv_actions.set_len(num_actions * num_hands) };
 
-        if locking.is_empty() {
-            // compute element-wise maximum (take the best response)
+        let end_range = node.my_end_range(&*game);
+        let end_limit = node.my_end_limit(&*game);
+
+        if &end_range as &[f32] == BLANK_NLR && &end_limit as &[i8] == BLANK_NLL {
+            // just compute element-wise maximum (take the best response)
             max_slices_uninit(result, &cfv_actions);
         } else {
             // when the node is locked
-            max_fma_slices_uninit(result, &cfv_actions, locking);
+            max_fma_slices_uninit(result, &cfv_actions, &end_range, &end_limit);
         }
     }
     // opponent node
@@ -690,10 +740,9 @@ fn compute_best_cfv_recursive<T: Game>(
         } else {
             normalized_strategy(node.strategy(), num_actions)
         };
-
+        
         // node-locking
-        let locking = game.locking_strategy(node);
-        apply_locking_strategy(&mut cfreach_actions, locking);
+        apply_locking_strategy::<T>(&mut cfreach_actions, node, game);
 
         // update the reach probabilities
         let row_size = cfreach.len();
@@ -703,7 +752,7 @@ fn compute_best_cfv_recursive<T: Game>(
 
         // compute the counterfactual values of each action
         for_each_child(node, |action| {
-            compute_best_cfv_recursive(
+            compute_best_cfv_recursive::<T>(
                 row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                 game,
                 &node.play(action),
@@ -818,12 +867,223 @@ pub(crate) fn normalized_strategy_compressed(strategy: &[u16], num_actions: usiz
 }
 
 #[inline]
-pub(crate) fn apply_locking_strategy(dst: &mut [f32], locking: &[f32]) {
-    if !locking.is_empty() {
-        dst.iter_mut().zip(locking).for_each(|(d, s)| {
-            if s.is_sign_positive() {
-                *d = *s;
+pub(crate) fn apply_locking_strategy<T: GamePair>(dst: &mut [f32], node: &T::N, game: &T::G) 
+where
+    T: GamePair,
+    <T as GamePair>::G: Game<P = T>,
+    <T as GamePair>::N: GameNode<P = T>
+    {
+    const VERBOSE: bool = false;
+    
+    // node-locking
+
+    let mut lrange_owned: Vec<f32> = node.my_end_range(game);
+    let mut llimit_owned = node.my_end_limit(game);
+
+    lrange_owned = game.cut_them_locks(lrange_owned, node.player());
+    llimit_owned = game.cut_them_locks(llimit_owned, node.player());
+
+
+    // saving dead hands as they are going to cause an apocalypse without that
+
+    let cut_size = dst.len() / node.num_actions();
+    let mut fix_attempts = 0;
+
+    let mut dead_hands: Vec<bool> = vec![false; cut_size];
+
+    for i in 0..cut_size
+    {
+        let mut is_dead = true;
+
+        for j in 0..node.num_actions()
+        {
+            if dst[j * cut_size + i] > 0.0
+            {
+                is_dead = false;
             }
-        });
+        }
+
+        dead_hands[i] = is_dead;
     }
+
+
+
+    // locking itself
+        
+    if VERBOSE { println!("apply_locking_strategy: d & r & t length: {} {} {}", dst.len(), lrange_owned.clone().len(), llimit_owned.clone().len()); }
+        
+    let lrange: &mut [f32] = &mut lrange_owned;
+    let llimit: &mut [i8] = &mut llimit_owned;
+        
+    dst.iter_mut().zip(lrange).zip(llimit).map(|((d, r), l)| (d, r, l)).for_each(|(d, r, l)| {
+        if *l == 0
+        {
+            if VERBOSE { println!("strict ranging detected"); }
+
+            *d = *r;
+        }
+        else if *l == -1
+        {
+            if VERBOSE { println!("underranging detected"); }
+
+            if *d > *r {*d = *r;}
+        }
+        else if *l == 1
+        {
+            if *d < *r {*d = *r;}
+        }
+    });
+
+
+
+    // fixing over and underdriving
+    
+    loop {
+        const VERBOSE: bool = false;
+
+        if VERBOSE { std::thread::sleep(std::time::Duration::from_millis(150)); }
+        if VERBOSE { println!("FIXING ATTEMPT {fix_attempts}"); }
+
+
+        let mut badsize = false;
+
+        for i in 0..cut_size
+        {   
+            let mut nodefreq = 0.0;
+
+            let mut min_locked_freq = 0.0;
+            let mut min_locked_ids = Vec::new() as Vec<usize>;
+
+            let mut max_locked_freq = 0.0;
+            let mut max_locked_ids = Vec::new() as Vec<usize>;
+
+            if dead_hands[i]
+            {
+                for j in 0..node.num_actions()
+                {
+                    dst[i + j * cut_size] = 0.0;
+                }
+
+                continue
+            }
+
+            for j in 0..node.num_actions()
+            {
+                nodefreq += dst[i + j * cut_size];
+
+                if llimit_owned[i + j * cut_size] == 0
+                {
+                    min_locked_freq += lrange_owned[i + j * cut_size];
+                    min_locked_ids.push(j);
+
+                    max_locked_freq += lrange_owned[i + j * cut_size];
+                    max_locked_ids.push(j);
+                }
+                else if llimit_owned[i + j * cut_size] == 1
+                {
+                    if dst[i + j * cut_size] == lrange_owned[i + j * cut_size]
+                    {
+                        min_locked_freq += lrange_owned[i + j * cut_size];
+                        min_locked_ids.push(j);
+                    }
+                }
+                else
+                {
+                    if dst[i + j * cut_size] == lrange_owned[i + j * cut_size]
+                    {
+                        max_locked_freq += lrange_owned[i + j * cut_size];
+                        max_locked_ids.push(j);
+                    }
+                }
+            }
+
+            nodefreq = (nodefreq * 1000.0).round() / 1000.0; // we must round or it will just die in an infinite loop of multiplying on 1.0000000001 and 0.9999999999 and never reach 1.0
+
+            if nodefreq != 1.0
+            {
+                badsize = true;
+
+                if VERBOSE { std::thread::sleep(std::time::Duration::from_millis(25)); }
+                if VERBOSE { println!("{nodefreq}? This is some BAD size on {i}! Off to fix it!"); }
+
+                if nodefreq > 1.0 // overdrive
+                {
+                    let multiplier = (1.0 - min_locked_freq) / (nodefreq - min_locked_freq);
+                    if VERBOSE { println!("markiplier: {}", multiplier); }
+
+                    for j in 0..node.num_actions()
+                    {
+                        let this_id = i + j * cut_size;
+
+                        if !min_locked_ids.contains(&j)
+                        {
+                            dst[this_id] *= multiplier;
+
+                            if llimit_owned[this_id] == 1 && dst[this_id] < lrange_owned[this_id]
+                            {
+                                dst[this_id] = lrange_owned[this_id];
+                            }
+                        }
+                    }
+                }
+                else // underdrive
+                {
+                    if max_locked_freq > 1.0
+                    {
+                        panic!("Oookay, seriously? {max_locked_freq} as min frequency?! You went all that way just to underdrive to {max_locked_freq}?! Are you insane or just trolling me? This is just not acceptable! Please, for the love of God, fix your locking strategy! I am going to call the police and I am NOT bluffing! The app should have prevented this from even taking off, but you somehow managed to underdrive to {max_locked_freq}?! This is just outrageous! Please, please, please fix your locking strategy! This is just unbelievable!");
+                    }
+
+                    if max_locked_freq == nodefreq // such a skill issue
+                    {
+                        for j in 0..node.num_actions()
+                        {
+                            if dst[i + j * cut_size] == 0.0
+                            {
+                                dst[i + j * cut_size] = 1.0; // compensatory
+                                nodefreq += 1.0;
+                            }
+                        }
+                    }
+
+                    let multiplier = (1.0 - max_locked_freq) / (nodefreq - max_locked_freq);
+                    if VERBOSE { println!("markiplier: {}", multiplier); }
+
+                    for j in 0..node.num_actions()
+                    {
+                        let this_id = i + j * cut_size;
+
+                        if !max_locked_ids.contains(&j)
+                        {
+                            dst[this_id] *= multiplier;
+
+                            if llimit_owned[this_id] == -1 && dst[this_id] > lrange_owned[this_id]
+                            {
+                                dst[this_id] = lrange_owned[this_id];
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                if VERBOSE { println!("{}? Sounds good enough to me!", nodefreq); }
+            }
+        }
+
+        if !badsize
+        {
+            if VERBOSE { println!("good job! over."); }
+            break
+        }
+        else
+        {
+            if fix_attempts >= 100
+            {
+                panic!("Too many fixing attempts, something is certainly not working");
+            }
+            fix_attempts += 1;
+        }
+        
+    }
+
 }

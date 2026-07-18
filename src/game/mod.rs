@@ -3,6 +3,7 @@ mod evaluation;
 mod interpreter;
 mod node;
 mod icm;
+mod node_eval;
 
 #[cfg(feature = "bincode")]
 mod serialization;
@@ -88,16 +89,29 @@ pub struct PostFlopGame {
     num_storage: u64,
     num_storage_ip: u64,
     num_storage_chance: u64,
+    num_locks: u64,
     misc_memory_usage: u64,
 
     // global storage
     // `storage*` are used as a global storage and are referenced by `PostFlopNode::storage*`.
     // Methods like `PostFlopNode::strategy` define how the storage is used.
     node_arena: Vec<MutexLike<PostFlopNode>>,
+
     storage1: Vec<u8>,
     storage2: Vec<u8>,
+
     storage_ip: Vec<u8>,
     storage_chance: Vec<u8>,
+
+    rstorage: MutexLike<Vec<f32>>, // nodelocking range game storage
+    lstorage: MutexLike<Vec<i8>>, // nodelocking limit game storage
+
+    mrstorage: MutexLike<Vec<u32>>, // packages of range offsets
+    mlstorage: MutexLike<Vec<u32>>, // packages of limit offsets
+
+    rhashes: MutexLike<Vec<(u64, usize)>>,
+    lhashes: MutexLike<Vec<(u64, usize)>>,
+
     locking_strategy: BTreeMap<usize, Vec<f32>>,
 
     // result interpreter
@@ -121,11 +135,15 @@ pub struct PostFlopGame {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct PostFlopNode {
-    prev_action: Action,
+    pub prev_action: Action,
     player: u8,
     turn: Card,
     river: Card,
     is_locked: bool,
+
+    // offsets to offsets
+    mstorage_offset: u32,
+
     amount: i32,
     children_offset: u32,
     num_children: u16,
@@ -137,6 +155,14 @@ pub struct PostFlopNode {
     storage1: *mut u8, // strategy
     storage2: *mut u8, // regrets or cfvalues
     storage3: *mut u8, // IP cfvalues
+}
+
+pub struct PostFlopPair {
+
+}
+
+pub struct BufferContainer {
+    package_buffer: Vec<Vec<PackagedAction>>
 }
 
 unsafe impl Send for PostFlopNode {}

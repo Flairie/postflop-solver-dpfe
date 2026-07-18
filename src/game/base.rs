@@ -1,11 +1,17 @@
 use super::*;
 use crate::bunching::*;
+use crate::hand;
 use crate::interface::*;
 use crate::utility::*;
+use crate::card::*;
 use std::mem::{self, MaybeUninit};
+use std::u8;
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
+
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 #[derive(Default)]
 struct BuildTreeInfo {
@@ -18,10 +24,10 @@ struct BuildTreeInfo {
 }
 
 impl Game for PostFlopGame {
-    type Node = PostFlopNode;
+    type P = PostFlopPair;
 
     #[inline]
-    fn root(&self) -> MutexGuardLike<Self::Node> {
+    fn root(&self) -> MutexGuardLike<<PostFlopPair as GamePair>::N> {
         self.node_arena[0].lock()
     }
 
@@ -39,7 +45,7 @@ impl Game for PostFlopGame {
     fn evaluate(
         &self,
         result: &mut [MaybeUninit<f32>],
-        node: &Self::Node,
+        node: &<PostFlopPair as GamePair>::N,
         player: usize,
         cfreach: &[f32],
     ) {
@@ -51,7 +57,7 @@ impl Game for PostFlopGame {
     }
 
     #[inline]
-    fn chance_factor(&self, node: &Self::Node) -> usize {
+    fn chance_factor(&self, node: &<PostFlopPair as GamePair>::N) -> usize {
         if node.turn == NOT_DEALT {
             45 - self.bunching_num_dead_cards
         } else {
@@ -82,7 +88,7 @@ impl Game for PostFlopGame {
     }
 
     #[inline]
-    fn isomorphic_chances(&self, node: &Self::Node) -> &[u8] {
+    fn isomorphic_chances(&self, node: &<PostFlopPair as GamePair>::N) -> &[u8] {
         if node.turn == NOT_DEALT {
             &self.isomorphism_ref_turn
         } else {
@@ -91,7 +97,7 @@ impl Game for PostFlopGame {
     }
 
     #[inline]
-    fn isomorphic_swap(&self, node: &Self::Node, index: usize) -> &[Vec<(u16, u16)>; 2] {
+    fn isomorphic_swap(&self, node: &<PostFlopPair as GamePair>::N, index: usize) -> &[Vec<(u16, u16)>; 2] {
         if node.turn == NOT_DEALT {
             &self.isomorphism_swap_turn[self.isomorphism_card_turn[index] as usize & 3]
         } else {
@@ -101,18 +107,27 @@ impl Game for PostFlopGame {
     }
 
     #[inline]
-    fn locking_strategy(&self, node: &Self::Node) -> &[f32] {
-        if !node.is_locked {
-            &[]
-        } else {
-            let index = self.node_index(node);
-            self.locking_strategy.get(&index).unwrap()
-        }
-    }
-
-    #[inline]
     fn is_compression_enabled(&self) -> bool {
         self.is_compression_enabled
+    }
+
+    
+    fn cut_them_locks<T>(&self, locks: Vec<T>, player: usize) -> Vec<T> 
+    where
+        T: Copy
+    {
+        let pairs: Vec<usize> = self.private_cards[player].iter().map(|&(c1, c2)| card_pair_to_index(c1, c2)).collect();
+        let action_num = locks.len() / RANGESIZE;
+        
+        let mut new_t = Vec::with_capacity(action_num * pairs.len());
+
+        for action in 0..action_num {
+            for pair in pairs.iter() {
+                new_t.push(locks[(pair.clone() as usize) + action * RANGESIZE]);
+            }
+        }
+
+        new_t
     }
 }
 
@@ -524,6 +539,10 @@ impl PostFlopGame {
         let num_nodes = self.count_num_nodes();
         let total_num_nodes = num_nodes[0] + num_nodes[1] + num_nodes[2];
 
+        let mut buffer = BufferContainer {
+            package_buffer: vec![vec![] as Vec<PackagedAction>; total_num_nodes as usize]
+        };
+
         if total_num_nodes > u32::MAX as u64
             || mem::size_of::<PostFlopNode>() as u64 * total_num_nodes > isize::MAX as u64
         {
@@ -552,11 +571,14 @@ impl PostFlopGame {
         root.turn = self.card_config.turn;
         root.river = self.card_config.river;
 
-        self.build_tree_recursive(0, &self.action_root.lock(), &mut info);
+        self.build_tree_recursive(0, &self.action_root.lock(), &mut info, &mut buffer);
 
         self.num_storage = info.num_storage;
         self.num_storage_ip = info.num_storage_ip;
         self.num_storage_chance = info.num_storage_chance;
+
+        self.lock_them_nodes(&buffer);
+
         self.misc_memory_usage = self.memory_usage_internal();
 
         Ok(())
@@ -582,6 +604,14 @@ impl PostFlopGame {
         self.storage2 = Vec::new();
         self.storage_ip = Vec::new();
         self.storage_chance = Vec::new();
+    }
+
+    #[inline]
+    fn clear_locks(&mut self) {
+        self.rstorage = MutexLike::new(Vec::new());
+        self.lstorage = MutexLike::new(Vec::new());
+        self.mrstorage = MutexLike::new(Vec::new());
+        self.mlstorage = MutexLike::new(Vec::new());
     }
 
     /// Counts the number of nodes in the game tree.
@@ -637,6 +667,11 @@ impl PostFlopGame {
         memory_usage += vec_memory_usage(&self.isomorphism_card_turn);
         memory_usage += vec_memory_usage(&self.isomorphism_ref_river);
 
+        memory_usage += vec_memory_usage(unsafe {self.rstorage.yoink()});
+        memory_usage += vec_memory_usage(unsafe {self.lstorage.yoink()});
+        memory_usage += vec_memory_usage(unsafe {self.mrstorage.yoink()});
+        memory_usage += vec_memory_usage(unsafe {self.mlstorage.yoink()});
+
         for refs in &self.isomorphism_ref_river {
             memory_usage += vec_memory_usage(refs);
         }
@@ -680,10 +715,13 @@ impl PostFlopGame {
         node_index: usize,
         action_node: &ActionTreeNode,
         info: &mut BuildTreeInfo,
-    ) {
+        buffer: &mut BufferContainer
+    )
+    {
         let mut node = self.node_arena[node_index].lock();
         node.player = action_node.player;
         node.amount = action_node.amount;
+        buffer.package_buffer[node_index] = action_node.actions.clone();
 
         if node.is_terminal() {
             return;
@@ -693,7 +731,7 @@ impl PostFlopGame {
             self.push_chances(node_index, info);
             for action_index in 0..node.num_actions() {
                 let child_index = node_index + node.children_offset as usize + action_index;
-                self.build_tree_recursive(child_index, &action_node.children[0].lock(), info);
+                self.build_tree_recursive(child_index, &action_node.children[0].lock(), info, buffer);
             }
         } else {
             self.push_actions(node_index, action_node, info);
@@ -703,9 +741,38 @@ impl PostFlopGame {
                     child_index,
                     &action_node.children[action_index].lock(),
                     info,
+                    buffer
                 );
             }
         }
+    }
+
+    // ONE THREAD AT A TIME PLEASE
+    fn lock_them_nodes(&self, buffer: &BufferContainer)
+    {
+        const VERBOSE: bool = false;
+
+        if VERBOSE { println!("lock_them_nodes: me: {:?}", unsafe { self.mrstorage.yoink() }); }
+
+        for node_id in 0..self.node_arena.len()
+        {
+            let p_actions = buffer.package_buffer[node_id].clone();
+            let mut node = self.node_arena[node_id].lock();
+            
+            if p_actions.len() != 0
+            {
+                push_nodelocks(&mut node, self, p_actions);
+            }
+        }
+
+        if VERBOSE { println!("lock_them_nodes: me: {:?}", unsafe { self.mrstorage.yoink() }); }
+
+        if VERBOSE { println!("lock_them_nodes: NODELOCKING DATA"); }
+
+        if VERBOSE { println!("lock_them_nodes: {}", unsafe { self.mrstorage.yoink().len() }); }
+        if VERBOSE { println!("lock_them_nodes: {}", unsafe { self.rstorage.yoink().len() }); }
+
+        if VERBOSE { println!("lock_them_nodes: {:?}", unsafe { self.rstorage.yoink() }); }
     }
 
     /// Pushes the chance actions to the `node`.
@@ -783,9 +850,9 @@ impl PostFlopGame {
         node.num_children = action_node.children.len() as u16;
         *base += node.num_children as usize;
 
-        for (child, action) in node.children().iter().zip(action_node.actions.iter()) {
+        for (child, p_action) in node.children().iter().zip(action_node.actions.iter()) {
             let mut child = child.lock();
-            child.prev_action = action;
+            child.prev_action = (*p_action).action;
             child.turn = node.turn;
             child.river = node.river;
         }
@@ -1447,4 +1514,1697 @@ impl PostFlopGame {
             }
         }
     }
+}
+
+fn push_nodelocks (node: &mut MutexGuardLike<PostFlopNode>, game: &PostFlopGame, p_actions: Vec<PackagedAction>)
+{
+    const VERBOSE: bool = false;
+
+    if VERBOSE { println!("push_nodelocks: Starting packing it up!"); }
+
+    let mut r_storage = game.rstorage.lock();
+    let mut l_storage = game.lstorage.lock();
+    let mut mr_storage = game.mrstorage.lock();
+    let mut ml_storage = game.mlstorage.lock();
+
+    let mut mr_data: Vec<u32> = vec![]; // offsets for the ranges of one specific node
+    let mut ml_data: Vec<u32> = vec![]; // same, but for limits
+
+    let mut r_hashes = game.rhashes.lock();
+    let mut l_hashes = game.lhashes.lock();
+
+    for mut packaged_action in p_actions
+    {
+        if VERBOSE { println!("push_nodelocks: Packing a packaged action"); }
+
+        let mut end_range: [f32; RANGESIZE] = [0.0; RANGESIZE];
+        let mut end_limit: [i8; RANGESIZE] = [1; RANGESIZE];
+
+        packaged_action.sort_rules();
+
+
+        if packaged_action.lock_rules.is_some() && packaged_action.lock_rules.as_ref().unwrap().len() > 0
+        {
+            let rule_num = packaged_action.lock_rules.as_ref().unwrap().len();
+            let rules = packaged_action.lock_rules.as_ref().unwrap().clone();
+
+            let mut board = vec![];
+            board.extend(game.card_config.flop);
+            if node.turn  != u8::MAX {board.push(node.turn );}
+            if node.river != u8::MAX {board.push(node.river);}
+
+            if rules[0].priority > 0
+            {
+                (end_range, end_limit) = apply_range(packaged_action.clone(), end_range, end_limit, [true; RANGESIZE]);
+            }
+
+            let mut rulepack: Vec<RuleLock> = vec![];
+            let mut trvthgrid: [bool; RANGESIZE] = [true; RANGESIZE];
+
+            for i in 0..rule_num
+            {
+                rulepack.push(rules[i].clone());
+
+                if i != rule_num - 1 && rules[i + 1].priority == rules[i].priority
+                {
+                    continue
+                }
+                else
+                {
+                    for r in rulepack.iter()
+                    {
+                        let thisgrid = get_trvth_grid(r, &board);
+                        
+                        for i in 0..RANGESIZE
+                        {
+                            trvthgrid[i] = trvthgrid[i] && thisgrid[i];
+                        }
+                    }
+                }
+
+                if rules[i].priority == 0
+                {
+                    (end_range, end_limit) = apply_range(packaged_action.clone(), end_range, end_limit, trvthgrid);
+                }
+                else
+                {
+                    for pair in 0..RANGESIZE
+                    {
+                        if trvthgrid[pair] == true
+                        {
+                            end_range[pair] = rules[i].percentage;
+                            end_limit[pair] = rules[i].limitation;
+                        }
+                    }
+                }
+
+
+                rulepack.clear();
+                trvthgrid = [true; RANGESIZE];
+
+                if i != rule_num-1 && rules[i].priority < 0 && rules[i + 1].priority == rules[i].priority
+                {
+                    (end_range, end_limit) = apply_range(packaged_action.clone(), end_range, end_limit, [true; RANGESIZE]);
+                }
+            }
+        }
+        else
+        {
+            (end_range, end_limit) = apply_range(packaged_action.clone(), end_range, end_limit, [true; RANGESIZE]);
+        }
+        
+        let vb_worthy: bool = VERBOSE && (end_range != [0.0; RANGESIZE] || end_limit != [1; RANGESIZE]);
+
+        let mut hasher: DefaultHasher;
+        let unsigned_range: Vec<u32> = end_range.iter().map(|f| (*f).to_bits()).collect();
+
+        hasher = DefaultHasher::new();
+        unsigned_range.hash(&mut hasher);
+        let range_hash = hasher.finish();
+        
+        if VERBOSE && vb_worthy { println!("my_end_range: range hash: {:}", range_hash); }
+
+        hasher = DefaultHasher::new();
+        end_limit.hash(&mut hasher);
+        let limit_hash = hasher.finish();
+
+        let mut r_loc: isize = -1;
+        let mut l_loc: isize = -1;
+
+        for t in 0..r_hashes.len()
+        {
+            if r_hashes[t].0 == range_hash && l_hashes[t].0 == limit_hash
+            {
+                r_loc = r_hashes[t].1 as isize;
+                l_loc = l_hashes[t].1 as isize;
+                break;
+            }
+        }
+
+        if r_loc == -1
+        {
+            r_loc = r_storage.len() as isize;
+            l_loc = l_storage.len() as isize;
+
+            r_hashes.push((range_hash, r_loc as usize));
+            l_hashes.push((limit_hash, l_loc as usize));
+
+            r_storage.extend(end_range);
+            l_storage.extend(end_limit);
+        }
+
+        mr_data.push(r_loc as u32);
+        ml_data.push(l_loc as u32);
+
+        if VERBOSE && vb_worthy { println!("push_nodelocks: Action packed"); }
+    }
+    
+    if VERBOSE { println!("my_end_range: mr_data: {:?}", mr_data); }
+    if VERBOSE { println!("my_end_range: ml_data: {:?}", ml_data); }
+    
+    // saving the offset packages into mem megastorages
+
+    let m_loc = mr_storage.len(); // they will be exactly the same due to how antipairs are implemented
+    
+    if VERBOSE { println!("my_end_range: m_loc: {:?}", m_loc); }
+
+    mr_storage.extend(mr_data);
+    ml_storage.extend(ml_data);
+    
+    // saving the pointer to node-related offset packages into the node itself
+
+    node.mstorage_offset = m_loc as u32; // the previous ver was a terrible idea 
+    // println!("my_end_range: mstorage offset: {:?}", node.mstorage_offset);
+    
+    if VERBOSE { println!("push_nodelocks: Finished here"); }
+    
+    fn apply_range (p_actions: PackagedAction, mut end_range: [f32; RANGESIZE], mut end_limit: [i8; RANGESIZE], trvthgrid: [bool; RANGESIZE]) -> ([f32; RANGESIZE], [i8; RANGESIZE])
+    {
+        const VERBOSE: bool = false;
+        const RANGEEMPTY: [f32; 13*13] = [0.0; 13*13];
+
+        if !p_actions.lock_range.is_none() 
+        {
+            let lock_range = p_actions.lock_range.unwrap().clone();
+            let lock_limit = p_actions.lock_limit.unwrap().clone();
+
+            if lock_range != RANGEEMPTY && VERBOSE
+            {
+                if VERBOSE {println!("apply_range: non-empty range found");}
+            }
+
+            for i in 0..13 { for j in 0..13
+            {
+                if i > j
+                {
+                    for suit_i in 0..4 { for suit_j in 0..4
+                    {
+                        // these are some nested loops aren't they
+
+                        if suit_i == suit_j
+                        {
+                            continue
+                        }
+                        else
+                        {
+                            let card1 = (12 - i) * 4 + suit_i;
+                            let card2 = (12 - j) * 4 + suit_j;
+
+                            if VERBOSE {println!("apply_range: offsuit: card1: {:?}, card2: {:?}", card1, card2);}
+
+                            let index = card_pair_to_index(card1 as Card, card2 as Card);
+                            if trvthgrid[index] == true && !(lock_range[i * 13 + j] == 0.0 && lock_limit[i * 13 + j] == 1)
+                            {
+                                end_range[index] = lock_range[i * 13 + j];
+                                end_limit[index] = lock_limit[i * 13 + j];
+                            }
+                        }
+                    }}
+                } 
+                else if i < j
+                {
+                    for suit in 0..4
+                    {
+                        let card1 = (12 - i) * 4 + suit;
+                        let card2 = (12 - j) * 4 + suit;
+
+                        if VERBOSE {println!("apply_range: suited: card1: {:?}, card2: {:?}", card1, card2);}
+                        
+                        let index = card_pair_to_index(card1 as Card, card2 as Card);
+                        if trvthgrid[index] == true && !(lock_range[i * 13 + j] == 0.0 && lock_limit[i * 13 + j] == 1)
+                        {
+                            end_range[index] = lock_range[i * 13 + j];
+                            end_limit[index] = lock_limit[i * 13 + j];
+                        }
+                    }
+                }
+                else
+                {
+                    for suit_i in 0..4 { for suit_j in 0..4
+                    {
+                        // more nested loopz
+
+                        if suit_i <= suit_j
+                        {
+                            continue
+                        }
+                        else
+                        {
+                            let card1 = (12 - i) * 4 + suit_i;
+                            let card2 = (12 - j) * 4 + suit_j;
+
+                            if VERBOSE {println!("apply_range: pair: card1: {:?}, card2: {:?}", card1, card2);}
+
+                            let index = card_pair_to_index(card1 as Card, card2 as Card);
+                            if trvthgrid[index] == true && !(lock_range[i * 13 + j] == 0.0 && lock_limit[i * 13 + j] == 1)
+                            {
+                                end_range[index] = lock_range[i * 13 + j];
+                                end_limit[index] = lock_limit[i * 13 + j];
+                            }
+                        }
+                    }}
+                }
+            } }
+
+            if lock_range != RANGEEMPTY && VERBOSE
+            {
+                println!("apply_range: result range: {:?}", end_range);
+            }
+        }
+
+        (end_range, end_limit)
+    }
+
+    fn get_trvth_grid (lock: &RuleLock, board: &Vec<Card>) -> [bool; RANGESIZE]
+    {
+        const VERBOSE: bool = false;
+
+        let rule_type = lock.rule_type;
+        let mut trvthgrid: [bool; RANGESIZE] = [false; RANGESIZE];
+
+        for i in 0..RANGESIZE
+        {
+            if rule_type.0 == 0 // hand class processing
+
+            {
+                let data = evaluate_class(&index_to_card_pair(i));
+
+                if rule_type.1 == data
+                {
+                    trvthgrid[i] = true;
+                }
+            }
+
+            else if rule_type.0 == 1 // hand rank
+
+            {
+                let hand = index_to_card_pair(i);
+                let rank: u8;
+                
+                if hand.0 > hand.1 // should always be true but im paranoid
+                {
+                    rank = hand.0 >> 2;
+                }
+                else
+                {
+                    rank = hand.1 >> 2;
+                }
+
+                if rule_type.1 == 0 && rank < rule_type.2
+                {
+                    trvthgrid[i] = true;
+                }
+                else if rule_type.1 == 1 && rank == rule_type.2
+                {
+                    trvthgrid[i] = true;
+                }
+                else if rule_type.1 == 2 && rank > rule_type.2
+                {
+                    trvthgrid[i] = true;
+                }
+                
+            }
+
+            else if rule_type.0 == 2 || rule_type.0 == 3 // made hand processing
+
+            {
+                let data = evaluate_rank(&index_to_card_pair(i), board);
+
+                const IS_MANUAL: [bool; 10] = [true, true, false, false, true, true, true, false, false, false]; // gahh
+                
+                if rule_type.0 == 3 && data.0 > rule_type.1
+                {
+                    trvthgrid[i] = true;
+                    continue;
+                }
+
+                if rule_type.1 == data.0
+                {
+                    if IS_MANUAL[data.0 as usize] // manual
+                    {
+                        if rule_type.2 == 0
+                        {
+                            trvthgrid[i] = true;
+                        }
+                        else
+                        {
+                            if rule_type.0 == 3 && data.1 < rule_type.2 // they just rank in the opposite order
+                            {
+                                trvthgrid[i] = true;
+                            }
+                            else
+                            {
+                                trvthgrid[i] = data.1 == rule_type.2;
+                            }
+                        }
+                    }
+                    else // autotrue
+                    {
+                        trvthgrid[i] = true;
+                    }
+                }
+                
+                
+            }
+
+            else if rule_type.0 == 4 // draw checker
+
+            {
+                let data = evaluate_draw(&index_to_card_pair(i), board);
+
+                if rule_type.2 == 2
+                {
+                    trvthgrid[i] = data.0[rule_type.1 as usize] && data.1[rule_type.1 as usize];
+                }
+                else if rule_type.2 == 1
+                {
+                    trvthgrid[i] = data.0[rule_type.1 as usize] && !data.1[rule_type.1 as usize];
+                }
+                else
+                {
+                    trvthgrid[i] = data.0[rule_type.1 as usize];
+                }
+            }
+
+            else if rule_type.0 == 5 // board state checker
+
+            {
+                let trvth_bits = evaluate_board(board);
+
+                if rule_type.2 == 0
+                {
+                    trvthgrid[i] = check_bit(trvth_bits, rule_type.1);
+                }
+                else
+                {
+                    trvthgrid[i] = !check_bit(trvth_bits, rule_type.1);
+                }
+            }
+
+            else if rule_type.0 == 6 // late street card checker
+
+            {
+                if board.len() >= 4 && rule_type.1 != 2
+                {
+                    if board[3] >> 2 == rule_type.2
+                    {
+                        trvthgrid[i] = true;
+                    }
+                }
+                if board.len() == 5 && rule_type.1 != 1
+                {
+                    if board[4] >> 2 == rule_type.2
+                    {
+                        trvthgrid[i] = true;
+                    }
+                }
+            }
+        }
+
+        trvthgrid
+    }
+
+
+}
+
+/// made hand eval
+fn evaluate_rank (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
+{
+    let mut cards = vec![hand.0, hand.1];
+    cards.extend(board);
+
+    let board_sorted = {
+        let mut tmp = board.clone();
+        tmp.sort_unstable_by(|a, b| b.cmp(&a));
+        tmp
+    }; // hypothetically it should be kinda sorted but without sorts it all is going to implode so can't risk it
+
+    let ret: (u8, u8); // hand type, related data
+
+    let repeats_data = evaluate_repeats(hand, &board_sorted);
+    let straight_data = evaluate_straight(hand, &board_sorted);
+    let flush_data = evaluate_flush(hand, &board_sorted);
+
+    let is_straight_flush = humble_straight_flush(hand, &board_sorted); // who cares about straight flush ranks, also just in case you can't check for straight flushes with the other functions as you having straight and flush doesn't necessarily mean you have a straight flush
+
+    if is_straight_flush
+    {
+        ret = (9, u8::MAX); // max for the sake of flex
+    }
+    else if repeats_data.0 == 6 // four of a kind
+    {
+        ret = (8, repeats_data.1);
+    }
+    else if repeats_data.0 == 5 // full house
+    {
+        ret = (7, repeats_data.1);
+    }
+    else if flush_data.0 == true // flush, obviously
+    {
+        ret = (6, flush_data.1);
+    }
+    else if straight_data.0 != 0 // straight, obviously
+    {
+        ret = (5, straight_data.1);
+    }
+    else if repeats_data.0 == 4 // set
+    {
+        ret = (4, repeats_data.1);
+    }
+    else if repeats_data.0 == 3 // three of a kind, trips
+    {
+        ret = (3, repeats_data.1);
+    }
+    else if repeats_data.0 == 2 // two pair
+    {
+        ret = (2, repeats_data.1);
+    }
+    else if repeats_data.0 == 1 // pair
+    {
+        ret = (1, repeats_data.1);
+    }
+    else // brokie high card T_T
+    {
+        ret = (0, evaluate_brokie(hand, &board_sorted));
+    }
+    
+    // FUNCS     
+    
+    /// high card evaluator
+    fn evaluate_brokie (hand: &(Card, Card), board: &Vec<Card>) -> u8
+    {
+        let mut cards = vec![hand.0, hand.1];
+        cards.extend(board);
+
+        let board_deranked = derank(board);
+
+        let mut ret: u8 = 1; // how top is the high card
+
+        let topcard = if hand.0 > hand.1 { hand.0 >> 2 } else { hand.1 >> 2 };
+
+        for checkrank in (0..13).rev()
+        {
+            if board_deranked.contains(&checkrank)
+            {
+                continue;
+            }
+            
+            if topcard == checkrank
+            {
+                break;
+            }
+
+            ret += 1;
+
+            if ret == 3
+            {
+                break;
+            }
+        }
+
+        ret
+    }
+
+    fn evaluate_repeats (hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
+    {
+        let mut cards = vec![hand.0, hand.1];
+        cards.extend(board);
+
+        let mut rank_counts = [0 as u8; 13];
+        let mut return_data = (0, u8::MAX); // hand type, related data
+
+        for &card in &cards
+        {
+            let rank = card >> 2;
+            rank_counts[rank as usize] += 1;
+        }
+
+        let mut pair_counter: u8 = 0;
+        let mut trip_counter: u8 = 0;
+        let mut quad_counter: u8 = 0; // purely for good looking code, can't get over 1
+
+        let mut pair_rank: u8 = u8::MAX; // for one pair calculations
+        let mut trip_rank: u8 = u8::MAX; // for trip vs set calculations
+
+        for rank in 0..13
+        {
+            if rank_counts[rank] == 2
+            {
+                pair_counter += 1;
+                pair_rank = rank as u8;
+            }
+            else if rank_counts[rank] == 3
+            {
+                trip_counter += 1;
+                trip_rank = rank as u8;
+            }
+            else if rank_counts[rank] == 4
+            {
+                quad_counter += 1;
+            }
+        }
+        
+        if pair_counter == 1 && trip_counter == 0 && quad_counter == 0
+        {
+            return_data.0 = 1; // one pair
+
+            if hand.0 >> 2 != pair_rank && hand.1 >> 2 != pair_rank
+            {
+                return_data.1 = u8::MAX; // board pair, get out of here
+            }
+            else if pair_rank > board[0] >> 2
+            {
+                return_data.1 = 1; // overpair
+            }
+            else if pair_rank == board[0] >> 2
+            {
+                return_data.1 = 2; // top pair
+            }
+            else if pair_rank >= board[1] >> 2
+            {
+                return_data.1 = 3; // second pair (or second underpair)
+            }
+            else
+            {
+                return_data.1 = 4; // weak pair
+            }
+
+
+        }
+        else if pair_counter == 2 && trip_counter == 0 && quad_counter == 0
+        {
+            return_data.0 = 2; // two pair
+        }
+        else if pair_counter == 0 && trip_counter == 1 && quad_counter == 0
+        {
+            if hand.0 >> 2 != trip_rank && hand.1 >> 2 != trip_rank
+            {
+                return_data.0 = 3; // three of a kind
+                return_data.1 = 0; // L board trip
+            }
+            else if hand.0 >> 2 == trip_rank && hand.1 >> 2 == trip_rank
+            {
+                return_data.0 = 4; // set, yeah we treat them differently
+
+                if trip_rank == board[0] >> 2
+                {
+                    return_data.1 = 1; // top set
+                }
+                else if trip_rank == board[1] >> 2
+                {
+                    return_data.1 = 2; // second set 
+                }
+                else
+                {
+                    return_data.1 = 3; // low set
+                }
+            }
+            else
+            {
+                return_data.0 = 3; // three of a kind
+                return_data.1 = 1; // trip
+            }
+        }
+        else if (pair_counter == 1 && trip_counter == 1) || trip_counter == 2
+        {
+            return_data.0 = 5; // full house
+        }
+        else if pair_counter == 0 && trip_counter == 0 && quad_counter == 1
+        {
+            return_data.0 = 6; // four of a kind
+        }
+
+        return_data
+    }
+
+    fn evaluate_straight(hand: &(Card, Card), board: &Vec<Card>) -> (u8, u8)
+    {
+        let mut cards = vec![hand.0, hand.1];
+        cards.extend(board);
+        cards.sort_unstable_by(|a, b| a.cmp(&b)); // ascending order because can override stuff for free
+
+
+        let cards_working = depair(&derank(&cards));
+        let board_deranked = derank(&board);
+
+        let mut result: (u8, u8) = (0, 0);
+
+        const STRAIGHT_PATTERN: [u8; 4] = [1, 1, 1, 1];
+        const WHEEL_BOTTOM: [u8; 4] = [0, 1, 2, 3];
+
+        let mut straight_height: u8 = 0;
+
+        if cards_working.len() < 5
+        {
+            return result;
+        }
+        else if cards_working[0..4] == WHEEL_BOTTOM && cards_working[cards_working.len() - 1] == 12
+        {
+            result.0 = 1;
+            straight_height = 3;
+        }
+        else
+        {
+            for i in 0..cards_working.len() - 4
+            {
+                let pattern = [
+                    cards_working[i + 1] - cards_working[i], 
+                    cards_working[i + 2] - cards_working[i + 1], 
+                    cards_working[i + 3] - cards_working[i + 2],
+                    cards_working[i + 4] - cards_working[i + 3]
+                    ];
+
+                if pattern == STRAIGHT_PATTERN
+                {
+                    result.0 = 1;
+                    straight_height = cards_working[i + 4];
+                }
+            }
+        }
+
+        let mut straight_height_top: u8 = u8::MAX;
+        let mut straight_height_second: u8 = u8::MAX;
+
+
+        for r in -1..9
+        {
+            if r == -1 // whell 
+            {
+                let test_arr: [u8; 5] = [0, 1, 2, 3, 12];
+
+                let mut counter: u8 = 0;
+                for i in 0..4
+                {
+                    if board_deranked.contains(&test_arr[i])
+                    {
+                        counter += 1;
+                    }
+                }
+
+                if counter == 5
+                {
+                    if straight_height == 3
+                    {
+                        straight_height = 0; // BoArD wHeEl Is NoT a SeRiOuS wHeEl
+                    }
+                }
+                else if counter >= 3
+                {
+                    straight_height_top = 3;
+                }
+            }
+            else
+            {
+                let r = r as u8;
+
+                let test_arr: [u8; 5] = [r, r + 1, r + 2, r + 3, r + 4];
+                let height = r + 4;
+
+                let mut counter: u8 = 0;
+                for i in 0..5
+                {
+                    if board_deranked.contains(&test_arr[i])
+                    {
+                        counter += 1;
+                    }
+                }
+
+                if counter == 5
+                {
+                    if height >= straight_height
+                    {
+                        straight_height = 0; // board straight is not a serious straight, straights below board straight are even less serious
+                    }
+
+                    straight_height_top = u8::MAX;
+                    straight_height_second = u8::MAX;
+                    // it didn't affect anything but variable values are now snappy and look nice
+                }
+                else if counter >= 3
+                {
+                    straight_height_second = straight_height_top;
+                    straight_height_top = height;
+                }
+            }
+        }
+
+        // returning shit
+
+        if straight_height == straight_height_top
+        {
+            result.1 = 1;
+        }
+        else if straight_height == straight_height_second
+        {
+            result.1 = 2;
+        }
+        else
+        {
+            result.1 = 3;
+        }
+
+        result
+    }
+
+    fn evaluate_flush (hand: &(Card, Card), board: &Vec<Card>) -> (bool, u8)
+    {
+        let mut cards = vec![hand.0, hand.1];
+        cards.extend(board);
+
+        let mut suit_counts = [0; 4];
+        let mut return_data = (false, 0); // is flush, rank of flush
+        let mut is_flush = false;
+        let mut flush_suit: u8 = u8::MAX;
+
+        for &card in &cards
+        {
+            let suit = card % 4;
+            suit_counts[suit as usize] += 1;
+
+            if suit_counts[suit as usize] >= 5
+            {
+                is_flush = true;
+                flush_suit = suit;
+            }
+        }
+
+        if !is_flush
+        {
+            return return_data;
+        }
+        else
+        {
+            return_data.0 = true;
+        }
+
+        let mut topcard: u8 = u8::MAX;
+
+        if (hand.0 % 4 == flush_suit) && (hand.1 % 4 == flush_suit)
+        {
+            if hand.0 > hand.1 
+            {
+                topcard = hand.0 >> 2;
+            }
+            else
+            {
+                topcard = hand.1 >> 2;
+            }
+        }
+        else if hand.0 % 4 == flush_suit
+        {
+            topcard = hand.0 >> 2;
+        }
+        else if hand.1 % 4 == flush_suit
+        {
+            topcard = hand.1 >> 2;
+        }
+        else
+        {
+            return (false, 0);
+        }
+
+        let mut nuttiness: u8 = 1;
+        for checkrank in (0..13).rev()
+        {
+            let checkcard = checkrank << 2 + flush_suit;
+
+            if board.contains(&checkcard)
+            {
+                continue;
+            }
+            
+            if topcard == checkrank
+            {
+                return_data.1 = nuttiness;
+                break;
+            }
+
+            nuttiness += 1;
+
+            if nuttiness == 3
+            {
+                break;
+            }
+        }
+
+        return_data
+    }
+
+    fn humble_straight_flush (hand: &(Card, Card), board: &Vec<Card>) -> bool
+    {
+        let mut cards = vec![hand.0, hand.1];
+        cards.extend(board);
+        cards.sort_unstable_by(|a, b| b.cmp(&a)); // this is definitely not sorted
+
+        let mut suit_line: u8 = 0;
+        let mut line_suit: u8 = u8::MAX;
+        let mut last_rank: u8 = u8::MAX;
+
+        for card in cards
+        {
+            let suit = card % 4;
+            let rank = card >> 2;
+
+            if line_suit == suit && last_rank == rank + 1
+            {
+                suit_line += 1;
+                last_rank = rank;
+
+                if suit_line == 5
+                {
+                    return true;
+                }
+            }
+            else if last_rank == rank
+            {
+                continue;
+            }
+            else
+            {
+                line_suit = suit;
+                last_rank = rank;
+                suit_line = 1;
+            }
+        }
+
+        return false;
+    }
+
+    ret
+}
+
+/// pocket cards eval
+fn evaluate_class (hand: &(Card, Card)) -> u8
+{
+    let rank1 = hand.0 >> 2;
+    let rank2 = hand.1 >> 2;
+    let suit1 = hand.0 % 4;
+    let suit2 = hand.1 % 4;
+    
+    if rank1 == rank2
+    {
+        0
+    }
+    else if suit1 == suit2
+    {
+        1
+    }
+    else
+    {
+        2
+    }
+}
+
+/// board eval
+fn evaluate_board (board: &Vec<Card>) -> u64
+{
+    let mut trvth_bits: u64 = 0;
+
+    let mut cards = board.clone();
+    cards.sort_unstable_by(|a, b| b.cmp(&a));
+
+    let board_ranks = derank(&cards);
+    let board_ranks_reversed = {
+        let mut tmp = board_ranks.clone();
+        tmp.reverse();
+        tmp
+    };
+
+
+    // board suits evaluation
+
+    {
+        let mut suit_counts = [0; 4];
+        for &card in &cards
+        {
+            let suit = card % 4;
+            suit_counts[suit as usize] += 1;
+        }
+        suit_counts.sort_unstable_by(|a, b| b.cmp(&a));
+
+        if suit_counts[0] == 1
+        {
+            trvth_bits |= 1 << 0; // rainbow
+        }
+        else if suit_counts[0] == 2
+        {
+            trvth_bits |= 1 << 21; // flush draw
+
+            if suit_counts[1] == 2
+            {
+                trvth_bits |= 1 << 22; // two flush draws
+            }
+        }
+        else if suit_counts[0] == 3
+        {
+            trvth_bits |= 1 << 23; // three card flush
+            trvth_bits |= 1 << 1; // flush possible
+        }
+        else if suit_counts[0] == 4
+        {
+            trvth_bits |= 1 << 24; // four card flush
+            trvth_bits |= 1 << 1; // flush possible
+        }
+        else if suit_counts[0] == 5
+        {
+            trvth_bits |= 1 << 25; // board flush
+            trvth_bits |= 1 << 1; // flush possible
+        }
+    }
+
+    // evaluating repeats
+
+    {
+        let mut repeats = u32::MAX;
+        let mut repeats_rank = u8::MAX;
+
+        let mut repeat_data = vec![];
+
+        for i in 0..board_ranks.len()
+        {
+            let rank = board_ranks[i];
+
+            if repeats_rank != rank
+            {
+                if repeats != u32::MAX
+                {
+                    repeat_data.push(repeats);
+                }
+
+                repeats = 1;
+                repeats_rank = rank;
+            }
+            else
+            {
+                repeats += 1;
+            }
+        }
+        repeat_data.push(repeats);
+        repeat_data.sort_unstable_by(|a, b| b.cmp(&a));
+
+        if repeat_data[0] == 2
+        {
+            trvth_bits |= 1 << 3; // repeats on the board
+
+            if repeat_data[1] == 1
+            {
+                trvth_bits |= 1 << 11; // paired board
+            }
+            else 
+            {
+                trvth_bits |= 1 << 12; // double paired board
+            }
+        }
+        else if repeat_data[0] == 3
+        {
+            trvth_bits |= 1 << 3; // repeats on the board
+
+            if repeat_data[1] == 1
+            {
+                trvth_bits |= 1 << 13; // trip board
+            }
+            else
+            {
+                trvth_bits |= 1 << 14; // boat board
+            }
+        }
+        else if repeat_data[0] == 4
+        {
+            trvth_bits |= 1 << 3; // repeats on the board
+            trvth_bits |= 1 << 15; // quad board
+        }
+    }
+
+    // evaluating straight potential
+
+    {
+        //// PATTERN LIBRARY
+
+        // gapped 3-straights
+        const G3_PATTERNS: [[u8; 2]; 5] = [
+            [3, 1],
+            [1, 3],
+            [2, 2],
+            [2, 1],
+            [1, 2]
+        ];
+
+        // no gap 3-straight
+        const NG3_PATTERN: [u8; 2] = [1, 1];
+
+        // gapped 4-straights
+        const G4_PATTERNS: [[u8; 3]; 3] = [
+            [2, 1, 1],
+            [1, 2, 1],
+            [1, 1, 2]
+        ];
+
+        // no gap 4-straight
+        const NG4_PATTERN: [u8; 3] = [1, 1, 1];
+
+        // board straight
+        const BS_PATTERN: [u8; 4] = [1, 1, 1, 1];
+
+
+
+        //// ACTUALLY PROCESSING
+        
+        let mut done = false;
+
+        // board straight detection
+
+        let board_depaired = depair(&board_ranks_reversed);
+
+        if board_depaired.len() == 5
+        {
+            let board_pattern = [
+                board_depaired[1] - board_depaired[0],
+                board_depaired[2] - board_depaired[1],
+                board_depaired[3] - board_depaired[2],
+                board_depaired[4] - board_depaired[3]
+            ];
+
+            if board_pattern == BS_PATTERN
+            {
+                trvth_bits |= 1 << 2; // straight possible
+                trvth_bits |= 1 << 36; // board straight
+                done = true;
+            }
+        }
+
+        // 4 card straight detection
+
+        if !done
+        {
+            if board_depaired.len() == 5
+            {
+                let mut present = false;
+                let mut nogap = false;
+
+                for i in 0..2
+                {
+                    let board_pattern = [
+                        board_depaired[i + 1] - board_depaired[i],
+                        board_depaired[i + 2] - board_depaired[i + 1],
+                        board_depaired[i + 3] - board_depaired[i + 2]
+                    ];
+
+                    if board_pattern == NG4_PATTERN
+                    {
+                        present = true;
+                        nogap = true;
+                    }
+                    else if G4_PATTERNS.contains(&board_pattern)
+                    {
+                        present = true;
+                    }
+                }
+
+                if present
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 34; // 4 card straight any
+
+                    if nogap
+                    {
+                        trvth_bits |= 1 << 35; // 4 card straight no gap
+                    }
+
+                    done = true;
+                }
+            }
+            else if board_depaired.len() == 4
+            {
+                let board_pattern = [
+                    board_depaired[1] - board_depaired[0],
+                    board_depaired[2] - board_depaired[1],
+                    board_depaired[3] - board_depaired[2]
+                ];
+
+                if board_pattern == NG4_PATTERN
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 34; // 4 card straight any
+                    trvth_bits |= 1 << 35; // 4 card straight no gap
+
+                    done = true;
+                }
+                else if G4_PATTERNS.contains(&board_pattern)
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 34; // 4 card straight any
+
+                    done = true;
+                }
+            }
+        }
+
+        // 3 card straight detection
+
+        if !done
+        {
+            if board_depaired.len() >= 4
+            {
+                let needed = board_depaired.len() - 2;
+
+                let mut present = false;
+                let mut nogap = false;
+
+                for i in 0..needed
+                {
+                    let board_pattern = [
+                        board_depaired[i + 1] - board_depaired[i],
+                        board_depaired[i + 2] - board_depaired[i + 1]
+                    ];
+
+                    if board_pattern == NG3_PATTERN
+                    {
+                        present = true;
+                        nogap = true;
+                    }
+                    else if G3_PATTERNS.contains(&board_pattern)
+                    {
+                        present = true;
+                    }
+                }
+
+                if present
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 32; // 3 card straight any
+
+                    if nogap
+                    {
+                        trvth_bits |= 1 << 33; // 3 card straight no gap
+                    }
+
+                    done = true;
+                }
+            }
+            else
+            {
+                let board_pattern = [
+                    board_depaired[1] - board_depaired[0],
+                    board_depaired[2] - board_depaired[1]
+                ];
+
+                if board_pattern == NG3_PATTERN
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 32; // 3 card straight any
+                    trvth_bits |= 1 << 33; // 3 card straight no gap
+
+                    done = true;
+                }
+                else if G3_PATTERNS.contains(&board_pattern)
+                {
+                    trvth_bits |= 1 << 2; // straight possible
+                    trvth_bits |= 1 << 32; // 3 card straight any
+
+                    done = true;
+                }
+            }
+
+        }
+
+        // is the board a connected board
+
+        if !done
+        {
+            let needed = board_depaired.len() - 1;
+
+            for i in 0..needed
+            {
+                let gap = board_depaired[i + 1] - board_depaired[i];
+
+                if gap == 1 && board_depaired[i] > 2 && board_depaired[i + 1] < 10
+                {
+                    trvth_bits |= 1 << 31; // connected
+                    break;
+                }
+            }
+        }
+    }
+
+    trvth_bits
+}
+
+fn check_bit (bits: u64, bit_id: u8) -> bool
+{
+    let mask = 1 << bit_id;
+    bits & mask != 0
+}
+
+/// draw eval
+fn evaluate_draw (hand: &(Card, Card), board: &Vec<Card>) -> ([bool; 5], [bool; 5])
+{
+    let mut cards = vec![hand.0, hand.1];
+    cards.extend(board);
+
+    let board_sorted = {
+        let mut tmp = board.clone();
+        tmp.sort_unstable_by(|a, b| b.cmp(&a));
+        tmp
+    };
+
+    let mut presence: [bool; 5] = [false, false, false, false, false]; // overcards, gutshot, open ended, backdoor, flush draw present
+    let mut bothhole: [bool; 5] = [false, false, false, false, false]; // same but for if both hole cards are used
+
+    let rank = evaluate_rank(hand, &board_sorted);
+
+    let over_data = eval_overcards(hand, &board_sorted);
+    let gtsh_data = eval_gutshot(hand, &board_sorted);
+    let oesd_data = eval_oesd(hand, &board_sorted);
+    let fdrw_data = eval_fdraw(hand, &board_sorted);
+
+    if rank.0 < 3 // two pair or less
+    {
+        presence[0] = over_data.0;
+        bothhole[0] = over_data.1;
+    }
+    if rank.0 < 5 // no straight
+    {
+        if oesd_data.0
+        {
+            presence[2] = oesd_data.0;
+            bothhole[2] = oesd_data.1;
+        }
+        else
+        {
+            presence[1] = gtsh_data.0;
+            bothhole[1] = gtsh_data.1;
+        }
+    }
+    if rank.0 < 6 // no flush
+    {
+        presence[3] = fdrw_data.1.0;
+        bothhole[3] = fdrw_data.1.1;
+        presence[4] = fdrw_data.0.0;
+        bothhole[4] = fdrw_data.0.1;
+    }
+
+    // FUNCS
+    
+    fn eval_overcards (hand: &(Card, Card), board: &Vec<Card>) -> (bool, bool)
+    {
+        let mut ret: (bool, bool) = (false, false); // overcard presence, both hole cards are overcards
+
+        if hand.0 >> 2 == hand.1 >> 2 // pocket pairs are not overcards, beach
+        {
+            return (false, false);
+        }
+        if hand.0 >> 2 > board[0] >> 2 || hand.1 >> 2 > board[0] >> 2
+        {
+            ret.0 = true;
+        }
+        if hand.0 >> 2 > board[0] >> 2 && hand.1 >> 2 > board[0] >> 2
+        {
+            ret.1 = true;
+        }
+
+        ret
+    }
+
+    fn eval_gutshot (hand: &(Card, Card), board: &Vec<Card>) -> (bool, bool)
+    {
+        let mut compboard = board.clone();
+        let mut ret = (false, false);
+
+        compboard.push(hand.0);
+        compboard.push(hand.1);
+
+        compboard.sort_unstable_by(|a, b| a.cmp(&b));
+
+        let compboard_processed = depair(&derank(&compboard));
+        let compboard_card_counts = card_counts(&derank(&compboard));
+
+        let hand_deranked = derank(&vec![hand.0, hand.1]);
+
+        let pocket_pair;
+        if hand_deranked[0] == hand_deranked[1]
+        {
+            pocket_pair = hand_deranked[0];
+        }
+        else
+        {
+            pocket_pair = u8::MAX;
+        }
+
+        const GPATTERNS: [[u8; 3]; 3] = [[2, 1, 1], [1, 2, 1], [1, 1, 2]];
+
+        if compboard_processed.len() < 4
+        {
+            return ret;
+        }
+
+        const WHEEL_RANKS: [u8; 5] = [0, 1, 2, 3, 12];
+        const BROAD_RANKS: [u8; 5] = [8, 9, 10, 11, 12];
+
+        // wheel gutshot detector
+
+        { // gotta get dirty, let's keep it contained in its own scope
+            let mut matches = 0;
+            let mut hole = 0;
+
+            for i in 0..5 {
+                if compboard_processed.contains(&(WHEEL_RANKS[i]))
+                {
+                    matches += 1;
+                }
+
+                if hand.0 >> 2 == WHEEL_RANKS[i] || hand.1 >> 2 == WHEEL_RANKS[i]
+                {
+                    hole += 1;
+                }
+            }
+
+            if matches == 4 && hole > 0
+            {
+                ret.0 = true;
+                ret.1 = hole == 2;
+            }
+        }
+
+        // normal gutshot detector
+
+        for i in 0..(compboard_processed.len()-3)
+        {
+            let mask = [
+                compboard_processed[i+1]-compboard_processed[i],
+                compboard_processed[i+2]-compboard_processed[i+1],
+                compboard_processed[i+3]-compboard_processed[i+2]
+            ];
+
+            let section = [
+                compboard_processed[i],
+                compboard_processed[i+1],
+                compboard_processed[i+2],
+                compboard_processed[i+3]
+            ];
+
+            if GPATTERNS.contains(&mask)
+            {
+                if 
+                    pocket_pair != u8::MAX && 
+                    section.contains(&pocket_pair) && 
+                    compboard_card_counts[pocket_pair as usize] == 2
+                {
+                    ret.0 = true;
+                }
+                else if pocket_pair == u8::MAX
+                {
+                    if
+                        section.contains(&(hand_deranked[0])) &&
+                        section.contains(&(hand_deranked[1])) &&
+                        compboard_card_counts[hand_deranked[0] as usize] == 1 &&
+                        compboard_card_counts[hand_deranked[1] as usize] == 1
+                    {
+                        ret.0 = true;
+                        ret.1 = true;
+                    }
+                    else if
+                        (section.contains(&(hand_deranked[0])) && compboard_card_counts[hand_deranked[0] as usize] == 1) ||
+                        (section.contains(&(hand_deranked[1])) && compboard_card_counts[hand_deranked[1] as usize] == 1)
+                    {
+                        ret.0 = true;
+                    }
+                }
+            }
+        }
+
+        // broadway gutshot detector
+
+        { // see wheel to understand the lore behind this bracket
+            let mut matches = 0;
+            let mut hole = 0;
+
+            for i in 0..5 {
+                if compboard_processed.contains(&(BROAD_RANKS[i]))
+                {
+                    matches += 1;
+                }
+
+                if hand.0 >> 2 == BROAD_RANKS[i] || hand.1 >> 2 == BROAD_RANKS[i]
+                {
+                    hole += 1;
+                }
+            }
+
+            if matches == 4 && hole > 0
+            {
+                ret.0 = true;
+                ret.1 = hole == 2;
+            }
+        }
+        
+        ret
+    }
+
+
+    fn eval_oesd (hand: &(Card, Card), board: &Vec<Card>) -> (bool, bool)
+    {
+        let mut compboard = board.clone();
+        let mut ret = (false, false);
+
+        compboard.push(hand.0);
+        compboard.push(hand.1);
+
+        compboard.sort_unstable_by(|a, b| a.cmp(&b));
+
+        let compboard_processed = depair(&derank(&compboard));
+        let compboard_card_counts = card_counts(&derank(&compboard));
+
+        let hand_deranked = derank(&vec![hand.0, hand.1]);
+        
+        let pocket_pair;
+        if hand_deranked[0] == hand_deranked[1]
+        {
+            pocket_pair = hand_deranked[0];
+        }
+        else
+        {
+            pocket_pair = u8::MAX;
+        }
+
+        const OEPATTERN: [u8; 3] = [1, 1, 1];
+        const DGPATTERN: [u8; 4] = [2, 1, 1, 2];
+
+        if compboard_processed.len() < 4
+        {
+            return ret;
+        }
+
+        // normal openender
+        for i in 0..(compboard_processed.len()-3)
+        {
+            if compboard_processed[i] == 0 && compboard_processed[i+3] == 12
+            {
+                continue; // no self-respecting oesd has twos or aces
+            }
+
+            let mask = [
+                compboard_processed[i+1]-compboard_processed[i],
+                compboard_processed[i+2]-compboard_processed[i+1],
+                compboard_processed[i+3]-compboard_processed[i+2]
+            ];
+
+            let section = [
+                compboard_processed[i],
+                compboard_processed[i+1],
+                compboard_processed[i+2],
+                compboard_processed[i+3]
+            ];
+
+            if mask == OEPATTERN
+            {
+                if
+                    pocket_pair != u8::MAX && 
+                    compboard_card_counts[pocket_pair as usize] == 2 &&
+                    section.contains(&pocket_pair)
+                {
+                    ret.0 = true;
+                }
+                else if pocket_pair == u8::MAX
+                {
+                    if
+                        section.contains(&(hand_deranked[0])) &&
+                        section.contains(&(hand_deranked[1])) &&
+                        compboard_card_counts[hand_deranked[0] as usize] == 1 &&
+                        compboard_card_counts[hand_deranked[1] as usize] == 1
+                    {
+                        ret.0 = true;
+                        ret.1 = true;
+                    }
+                    else if
+                        (section.contains(&(hand_deranked[0])) && compboard_card_counts[hand_deranked[0] as usize] == 1) ||
+                        (section.contains(&(hand_deranked[1])) && compboard_card_counts[hand_deranked[1] as usize] == 1)
+                    {
+                        ret.0 = true;
+                    }
+                }
+            }
+        }
+        
+        if compboard_processed.len() < 5
+        {
+            return ret;
+        }
+        
+        // dgsd
+        for i in 0..(compboard_processed.len()-4)
+        {
+            let mask = [
+                compboard_processed[i+1]-compboard_processed[i],
+                compboard_processed[i+2]-compboard_processed[i+1],
+                compboard_processed[i+3]-compboard_processed[i+2],
+                compboard_processed[i+4]-compboard_processed[i+3]
+            ];
+
+            let section = [
+                compboard_processed[i],
+                compboard_processed[i+1],
+                compboard_processed[i+2],
+                compboard_processed[i+3],
+                compboard_processed[i+4]
+            ];
+
+            let section_core = [
+                compboard_processed[i+1],
+                compboard_processed[i+2],
+                compboard_processed[i+3]
+            ];
+
+            let section_outs = [
+                compboard_processed[i],
+                compboard_processed[i+4]
+            ];
+
+            if mask == DGPATTERN
+            {
+                if !(section_core.contains(&(hand_deranked[0])) || section_core.contains(&(hand_deranked[1])))
+                {
+                    if 
+                        !(
+                            hand_deranked.contains(&section_outs[0]) && 
+                            hand_deranked.contains(&section_outs[1]) &&
+                            compboard_card_counts[hand_deranked[0] as usize] == 1 &&
+                            compboard_card_counts[hand_deranked[1] as usize] == 1
+                        )
+                    {
+                        continue; // it is either a normal gutshot or no gutshot at all since we don't care about draws to board straights
+                    }
+                    
+                }
+
+                if
+                    pocket_pair != u8::MAX && 
+                    compboard_card_counts[pocket_pair as usize] == 2 &&
+                    section.contains(&pocket_pair)
+                {
+                    ret.0 = true;
+                }
+                else if pocket_pair == u8::MAX
+                {
+                    if
+                        section.contains(&(hand_deranked[0])) &&
+                        section.contains(&(hand_deranked[1])) &&
+                        compboard_card_counts[hand_deranked[0] as usize] == 1 &&
+                        compboard_card_counts[hand_deranked[1] as usize] == 1
+                    {
+                        ret.0 = true;
+                        ret.1 = true;
+                    }
+                    else if
+                        (section.contains(&(hand_deranked[0])) && compboard_card_counts[hand_deranked[0] as usize] == 1) ||
+                        (section.contains(&(hand_deranked[1])) && compboard_card_counts[hand_deranked[1] as usize] == 1)
+                    {
+                        ret.0 = true;
+                    }
+                }
+            }
+        }
+        
+        ret
+    }
+
+
+    fn eval_fdraw (hand: &(Card, Card), board: &Vec<Card>) -> ((bool, bool), (bool, bool)) // flush draw present, both hole cards in flush draw, backdoor flush draw present, both hole cards in backdoor flush draw
+    {
+        let mut suits = [0, 0, 0, 0];
+
+        for card in board
+        {
+            suits[(card % 4) as usize] += 1;
+        }
+
+        for i in 0..4
+        {
+            if suits[i] == 2 && hand.0 % 4 == i as u8 && hand.1 % 4 == i as u8
+            {
+                return ((true, true), (false, false));
+            }
+            else if suits[i] == 3 && (hand.0 % 4 == i as u8 || hand.1 % 4 == i as u8)
+            {
+                return ((true, false), (false, false));
+            }
+            else if suits[i] == 1 && hand.0 % 4 == i as u8 && hand.1 % 4 == i as u8
+            {
+                return ((false, false), (true, true));
+            }
+            else if suits[i] == 2 && (hand.0 % 4 == i as u8 || hand.1 % 4 == i as u8)
+            {
+                return ((false, false), (true, false));
+            }
+
+        }
+
+        ((false, false), (false, false))
+    }
+
+    (presence, bothhole)
+}
+
+/// Removes the suit information from a card vector, leaving only the ranks.
+fn derank(cards: &Vec<u8>) -> Vec<u8>
+{
+    let mut deranked: Vec<u8> = vec![];
+
+    for card in cards
+    {
+        deranked.push(card >> 2);
+    }
+
+    deranked
+}
+
+/// Removes pairs from deranked and sorted card vec
+fn depair(cards: &Vec<u8>) -> Vec<u8>
+{
+    let mut depaired: Vec<u8> = vec![];
+
+    let mut last_card = u8::MAX;
+
+    for card in cards
+    {
+        if *card != last_card
+        {
+            depaired.push(*card);
+            last_card = *card;
+        }
+    }
+
+    depaired
+}
+
+/// Returns an array of counts for each rank that appear in a sorted deranked card vector.
+fn card_counts(cards: &Vec<u8>) -> [u8; 13]
+{
+    let mut counts = [0; 13];
+
+    for card in cards
+    {
+        counts[*card as usize] += 1;
+    }
+
+    counts
 }

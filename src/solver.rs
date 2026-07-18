@@ -40,12 +40,17 @@ impl DiscountParams {
 /// satisfied.
 ///
 /// This method returns the exploitability of the obtained strategy.
-pub fn solve<T: Game>(
-    game: &mut T,
+pub fn solve<T: GamePair>(
+    game: &mut T::G,
     max_num_iterations: u32,
     target_exploitability: f32,
     print_progress: bool,
-) -> f32 {
+) -> f32 
+where
+    T: GamePair,
+    <T as GamePair>::G: Game<P = T>,
+    <T as GamePair>::N: GameNode<P = T>
+    {
     if game.is_solved() {
         panic!("Game is already solved");
     }
@@ -55,7 +60,7 @@ pub fn solve<T: Game>(
     }
 
     let mut root = game.root();
-    let mut exploitability = compute_exploitability(game);
+    let mut exploitability = compute_exploitability::<T>(game);
 
     if print_progress {
         print!("iteration: 0 / {max_num_iterations} ");
@@ -73,7 +78,7 @@ pub fn solve<T: Game>(
         // alternating updates
         for player in 0..2 {
             let mut result = Vec::with_capacity(game.num_private_hands(player));
-            solve_recursive(
+            solve_recursive::<T>(
                 result.spare_capacity_mut(),
                 game,
                 &mut root,
@@ -84,7 +89,7 @@ pub fn solve<T: Game>(
         }
 
         if (t + 1) % 10 == 0 || t + 1 == max_num_iterations {
-            exploitability = compute_exploitability(game);
+            exploitability = compute_exploitability::<T>(game);
         }
 
         if print_progress {
@@ -99,14 +104,19 @@ pub fn solve<T: Game>(
         io::stdout().flush().unwrap();
     }
 
-    finalize(game);
+    finalize::<T>(game);
 
     exploitability
 }
 
 /// Proceeds Discounted CFR algorithm for one iteration.
 #[inline]
-pub fn solve_step<T: Game>(game: &T, current_iteration: u32) {
+pub fn solve_step<T: GamePair>(game: &T::G, current_iteration: u32) 
+where
+    T: GamePair,
+    <T as GamePair>::G: Game<P = T>,
+    <T as GamePair>::N: GameNode<P = T>
+    {
     if game.is_solved() {
         panic!("Game is already solved");
     }
@@ -121,7 +131,7 @@ pub fn solve_step<T: Game>(game: &T, current_iteration: u32) {
     // alternating updates
     for player in 0..2 {
         let mut result = Vec::with_capacity(game.num_private_hands(player));
-        solve_recursive(
+        solve_recursive::<T>(
             result.spare_capacity_mut(),
             game,
             &mut root,
@@ -133,14 +143,19 @@ pub fn solve_step<T: Game>(game: &T, current_iteration: u32) {
 }
 
 /// Recursively solves the counterfactual values.
-fn solve_recursive<T: Game>(
+fn solve_recursive<T: GamePair>(
     result: &mut [MaybeUninit<f32>],
-    game: &T,
-    node: &mut T::Node,
+    game: &T::G,
+    node: &mut T::N,
     player: usize,
     cfreach: &[f32],
     params: &DiscountParams,
-) {
+) 
+where
+    T: GamePair,
+    <T as GamePair>::G: Game<P = T>,
+    <T as GamePair>::N: GameNode<P = T>
+    {
     // return the counterfactual values when the `node` is terminal
     if node.is_terminal() {
         game.evaluate(result, node, player, cfreach);
@@ -153,7 +168,7 @@ fn solve_recursive<T: Game>(
     // simply recurse when the number of actions is one
     if num_actions == 1 && !node.is_chance() {
         let child = &mut node.play(0);
-        solve_recursive(result, game, child, player, cfreach, params);
+        solve_recursive::<T>(result, game, child, player, cfreach, params);
         return;
     }
 
@@ -179,7 +194,7 @@ fn solve_recursive<T: Game>(
 
         // compute the counterfactual values of each action
         for_each_child(node, |action| {
-            solve_recursive(
+            solve_recursive::<T>(
                 row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                 game,
                 &mut node.play(action),
@@ -226,7 +241,7 @@ fn solve_recursive<T: Game>(
     else if node.player() == player {
         // compute the counterfactual values of each action
         for_each_child(node, |action| {
-            solve_recursive(
+            solve_recursive::<T>(
                 row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                 game,
                 &mut node.play(action),
@@ -236,6 +251,15 @@ fn solve_recursive<T: Game>(
             );
         });
 
+        let mut end_range_owned = node.my_end_range(game);
+        let mut end_limit_owned = node.my_end_limit(game);
+
+        end_range_owned = game.cut_them_locks(end_range_owned, player);
+        end_limit_owned = game.cut_them_locks(end_limit_owned, player);
+        
+        let mut end_range: &mut [f32] = &mut end_range_owned;
+        let mut end_limit: &mut [i8] = &mut end_limit_owned;
+
         // compute the strategy by regret-maching algorithm
         let mut strategy = if game.is_compression_enabled() {
             regret_matching_compressed(node.regrets_compressed(), num_actions)
@@ -244,8 +268,7 @@ fn solve_recursive<T: Game>(
         };
 
         // node-locking
-        let locking = game.locking_strategy(node);
-        apply_locking_strategy(&mut strategy, locking);
+        apply_locking_strategy::<T>(&mut strategy, node, game);
 
         // sum up the counterfactual values
         let mut cfv_actions = cfv_actions.lock();
@@ -262,12 +285,17 @@ fn solve_recursive<T: Game>(
                 *x += (*y as f32) * decoder;
             });
 
-            if !locking.is_empty() {
-                strategy.iter_mut().zip(locking).for_each(|(d, s)| {
-                    if s.is_sign_positive() {
-                        *d = 0.0;
+            if end_range != BLANK_NLR || end_limit != BLANK_NLL {
+                strategy.iter_mut().zip(end_range).zip(end_limit).map(|((d, r), l)| (d, r, l)).for_each(|(d, r, l)| {
+                    if !(*l == 1 && *r == 0.0)
+                    {
+                        *d = *r;
                     }
-                })
+                });
+                
+                // apparently they were consumed so we need to get 'em back right here
+                end_range = &mut end_range_owned;
+                end_limit = &mut end_limit_owned;
             }
 
             let new_scale = encode_unsigned_slice(cum_strategy, &strategy);
@@ -287,12 +315,13 @@ fn solve_recursive<T: Game>(
                 sub_slice(row, result);
             });
 
-            if !locking.is_empty() {
-                cfv_actions.iter_mut().zip(locking).for_each(|(d, s)| {
-                    if s.is_sign_positive() {
-                        *d = 0.0;
+            if end_range != BLANK_NLR || end_limit != BLANK_NLL {
+                cfv_actions.iter_mut().zip(end_range).zip(end_limit).map(|((d, r), l)| (d, r, l)).for_each(|(d, r, l)| {
+                    if !(*l == 1 && *r == 0.0)
+                    {
+                        *d = *r;
                     }
-                })
+                });
             }
 
             let new_scale = encode_signed_slice(cum_regret, &cfv_actions);
@@ -326,9 +355,7 @@ fn solve_recursive<T: Game>(
             regret_matching(node.regrets(), num_actions)
         };
 
-        // node-locking
-        let locking = game.locking_strategy(node);
-        apply_locking_strategy(&mut cfreach_actions, locking);
+        apply_locking_strategy::<T>(&mut cfreach_actions, node, game);
 
         // update the reach probabilities
         let row_size = cfreach.len();
@@ -338,7 +365,7 @@ fn solve_recursive<T: Game>(
 
         // compute the counterfactual values of each action
         for_each_child(node, |action| {
-            solve_recursive(
+            solve_recursive::<T>(
                 row_mut(cfv_actions.lock().spare_capacity_mut(), action, num_hands),
                 game,
                 &mut node.play(action),

@@ -21,6 +21,14 @@ struct LeducNode {
     storage: Vec<f32>,
     strategy_scale: f32,
     storage_scale: f32,
+
+    // compatibility bwaaah
+    end_range: Option<[f32; 6]>,
+    end_limit: Option<[i8; 6]>,
+}
+
+struct LeducPair {
+
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -49,8 +57,13 @@ const PLAYER_FOLD_FLAG: usize = 0x300;
 
 const NOT_DEALT: usize = 0xff;
 
+impl GamePair for LeducPair {
+    type G = LeducGame;
+    type N = LeducNode;
+}
+
 impl Game for LeducGame {
-    type Node = LeducNode;
+    type P = LeducPair;
 
     #[inline]
     fn root(&self) -> MutexGuardLike<Self::Node> {
@@ -146,6 +159,11 @@ impl Game for LeducGame {
     fn is_compression_enabled(&self) -> bool {
         self.is_compression_enabled
     }
+
+    #[inline]
+    fn cut_them_locks<T>(&self, locks: Vec<T>, boni: &Vec<u8>) -> Vec<T> {
+        lockss
+    }
 }
 
 impl LeducGame {
@@ -171,6 +189,9 @@ impl LeducGame {
             storage: Default::default(),
             strategy_scale: 0.0,
             storage_scale: 0.0,
+
+            end_limit: None,
+            end_range: None
         };
         Self::build_tree_recursive(&mut root, Action::None, [0, 0]);
         Self::allocate_memory_recursive(&mut root);
@@ -221,6 +242,9 @@ impl LeducGame {
                     storage: Default::default(),
                     strategy_scale: 0.0,
                     storage_scale: 0.0,
+
+                    end_limit: None,
+                    end_range: None
                 }),
             ));
         }
@@ -247,6 +271,9 @@ impl LeducGame {
                     storage: Default::default(),
                     strategy_scale: 0.0,
                     storage_scale: 0.0,
+
+                    end_limit: None,
+                    end_range: None
                 }),
             ));
         }
@@ -314,6 +341,8 @@ impl LeducGame {
 }
 
 impl GameNode for LeducNode {
+    type P = LeducPair;
+
     #[inline]
     fn is_terminal(&self) -> bool {
         self.player & PLAYER_TERMINAL_FLAG != 0
@@ -433,6 +462,20 @@ impl GameNode for LeducNode {
     #[inline]
     fn set_cfvalue_scale(&mut self, scale: f32) {
         self.storage_scale = scale;
+    }
+
+    fn my_end_range(&self) -> Vec<f32> {
+        vec![0.0; 6]
+    }
+
+    fn my_end_limit(&self) -> Vec<i8> {
+        vec![1, 6]
+    }
+
+    #[inline]
+    fn my_boni(&self) -> Vec<u8>
+    {
+        vec![] as Vec<u8> // no boni
     }
 }
 

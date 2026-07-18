@@ -1,16 +1,17 @@
-use crate::mutex_like::*;
+use crate::{PostFlopNode, mutex_like::*};
 use std::mem::MaybeUninit;
 use std::ops::Range;
+use std::any::TypeId;
 
 /// The trait representing a game.
 pub trait Game: Send + Sync {
     /// The type representing a node in game tree.
     #[doc(hidden)]
-    type Node: GameNode;
+    type P: GamePair;
 
     /// Returns the root node of game tree.
     #[doc(hidden)]
-    fn root(&self) -> MutexGuardLike<Self::Node>;
+    fn root(&self) -> MutexGuardLike<<Self::P as GamePair>::N>;
 
     /// Returns the number of private hands of given player.
     #[doc(hidden)]
@@ -25,14 +26,14 @@ pub trait Game: Send + Sync {
     fn evaluate(
         &self,
         result: &mut [MaybeUninit<f32>],
-        node: &Self::Node,
+        node: &<Self::P as GamePair>::N,
         player: usize,
         cfreach: &[f32],
     );
 
     /// Returns the effective number of chances.
     #[doc(hidden)]
-    fn chance_factor(&self, node: &Self::Node) -> usize;
+    fn chance_factor(&self, node: &<Self::P as GamePair>::N) -> usize;
 
     /// Returns whether the instance is solved.
     #[doc(hidden)]
@@ -56,20 +57,14 @@ pub trait Game: Send + Sync {
 
     /// Returns the list of indices that isomorphic chances refer to.
     #[doc(hidden)]
-    fn isomorphic_chances(&self, _node: &Self::Node) -> &[u8] {
+    fn isomorphic_chances(&self, _node: &<Self::P as GamePair>::N) -> &[u8] {
         &[]
     }
 
     /// Returns the swap list of the given isomorphic chance.
     #[doc(hidden)]
-    fn isomorphic_swap(&self, _node: &Self::Node, _index: usize) -> &[Vec<(u16, u16)>; 2] {
+    fn isomorphic_swap(&self, _node: &<Self::P as GamePair>::N, _index: usize) -> &[Vec<(u16, u16)>; 2] {
         unreachable!()
-    }
-
-    /// Returns the locking strategy.
-    #[doc(hidden)]
-    fn locking_strategy(&self, _node: &Self::Node) -> &[f32] {
-        &[]
     }
 
     /// Returns whether the compression is enabled.
@@ -77,10 +72,16 @@ pub trait Game: Send + Sync {
     fn is_compression_enabled(&self) -> bool {
         false
     }
+
+    /// Cuts out nodelocking unused cards for postflopgame.
+    #[doc(hidden)]
+    fn cut_them_locks<T>(&self, locks: Vec<T>, player: usize) -> Vec<T> where T: Copy;
 }
 
 /// The trait representing a node in game tree.
 pub trait GameNode: Send + Sync {
+    type P: GamePair;
+
     /// Returns whether the node is terminal.
     #[doc(hidden)]
     fn is_terminal(&self) -> bool;
@@ -292,4 +293,22 @@ pub trait GameNode: Send + Sync {
     fn enable_parallelization(&self) -> bool {
         false
     }
+
+    // Returns nodelocking ranges
+    #[doc(hidden)]
+    fn my_end_range(&self, game: &<Self::P as GamePair>::G) -> Vec<f32>;
+
+    // returns nodelocking limit
+    #[doc(hidden)]
+    fn my_end_limit(&self, game: &<Self::P as GamePair>::G) -> Vec<i8>;
+
+    // gets board cards as vec
+    #[doc(hidden)]
+    fn my_boni(&self) -> Vec<u8>;
+    
+}
+
+pub trait GamePair: Send + Sync {
+    type G: Game;
+    type N: GameNode;
 }

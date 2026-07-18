@@ -835,9 +835,8 @@ impl PostFlopGame {
         } else {
             normalized_strategy(node.strategy(), num_actions)
         };
-
-        let locking = self.locking_strategy(&node);
-        apply_locking_strategy(&mut ret, locking);
+        
+        apply_locking_strategy::<PostFlopPair>(&mut ret, &node, self);
 
         ret.chunks_exact_mut(num_hands).for_each(|chunk| {
             self.apply_swap(chunk, player, false);
