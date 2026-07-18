@@ -216,6 +216,8 @@ impl GameNode for PostFlopNode {
             return vec![] as Vec<f32>
         }
 
+        if self.mstorage_offset == 0 { println!("my_end_range: me: {:?}", self); }
+
         let mr_storage = unsafe { game.mrstorage.yoink() };
 
         if VERBOSE { println!("my_end_range: Initializing pointer getting sequence"); }
@@ -349,7 +351,7 @@ impl Default for PostFlopNode {
 
 impl PostFlopNode {
     #[inline]
-    pub(super) fn children(&self) -> &[MutexLike<Self>] {
+    pub fn children(&self) -> &[MutexLike<Self>] {
         // This is safe because `MutexLike<T>` is a `repr(transparent)` wrapper around `T`.
         let self_ptr = self as *const _ as *const MutexLike<PostFlopNode>;
         unsafe {
