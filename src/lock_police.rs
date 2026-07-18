@@ -117,6 +117,8 @@ pub fn police_locks_strings(tree: MutexGuard<ActionTree>, card_config: &CardConf
 
     for error in &error_vec
     {
+        println!("{:?}", error);
+        
         let mut new_string = "".to_owned();
 
         for i in 0..error.0.len()
