@@ -12,8 +12,10 @@ pub fn police_locks_strings(tree: &ActionTree, card_config: &CardConfig) -> Vec<
 {
     let new_tree = tree.clone();
     let new_config = card_config.clone();
+
+    let toy_game = PostFlopGame::with_config(new_config, new_tree).unwrap();
     
-    let mut error_vec = police_locks(new_tree, new_config);
+    let mut error_vec = police_locks(toy_game);
 
     // collapsing the vecs
 
@@ -157,16 +159,14 @@ pub fn police_locks_strings(tree: &ActionTree, card_config: &CardConfig) -> Vec<
     strings
 }
 
-pub(crate) fn police_locks(tree: ActionTree, card_config: CardConfig) -> ErrorVec
+pub fn police_locks(game: PostFlopGame) -> ErrorVec
 {
-    let toy_game = PostFlopGame::with_config(card_config, tree).unwrap();
-
     let history_base: Vec<Action> = vec![];
     let error_vec: Vec<(Vec<Action>, [u16; 2])> = vec![];
 
-    let root = toy_game.root();
+    let root = game.root();
 
-    toy_game.verify_locks_recursive(root, &history_base, error_vec)
+    game.verify_locks_recursive(root, &history_base, error_vec)
 }
 
 impl PostFlopGame
