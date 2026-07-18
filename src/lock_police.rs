@@ -192,7 +192,7 @@ pub fn police_locks(game: PostFlopGame) -> ErrorVec
 
 impl PostFlopGame
 {
-    fn verify_locks(
+    pub fn verify_locks(
         &self
     ) -> ErrorVec
     {
