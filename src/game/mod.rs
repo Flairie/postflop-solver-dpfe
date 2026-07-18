@@ -3,8 +3,8 @@ mod evaluation;
 mod interpreter;
 mod node;
 mod icm;
-mod lock_police;
 mod node_eval;
+mod lock_police;
 
 #[cfg(feature = "bincode")]
 mod serialization;
@@ -136,7 +136,7 @@ pub struct PostFlopGame {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct PostFlopNode {
-    prev_action: Action,
+    pub prev_action: Action,
     player: u8,
     turn: Card,
     river: Card,
