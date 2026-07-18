@@ -4,7 +4,6 @@ mod interpreter;
 mod node;
 mod icm;
 mod node_eval;
-mod lock_police;
 
 #[cfg(feature = "bincode")]
 mod serialization;
