@@ -25,7 +25,7 @@ pub fn police_locks_strings(tree: MutexGuard<ActionTree>, card_config: &CardConf
         let mut new_vec: ErrorVec = vec![];
 
         // vecs with same indexing
-        let mut generics = vec![] as Vec<(Vec<Action>, [u16; 2], bool)>;
+        let mut generics = vec![] as Vec<(Vec<Action>, [u16; 2], bool, u8)>;
 
         for error in &error_vec
         {
@@ -55,6 +55,7 @@ pub fn police_locks_strings(tree: MutexGuard<ActionTree>, card_config: &CardConf
 
                 if generics[id].1 == error.1
                 {
+                    generics[id].3 += 1;
                     continue;
                 }
                 else 
@@ -64,7 +65,7 @@ pub fn police_locks_strings(tree: MutexGuard<ActionTree>, card_config: &CardConf
             }
             else 
             {
-                generics.push((generic_vec, error.1, true));
+                generics.push((generic_vec, error.1, true, 1));
             }
         }
 
@@ -91,7 +92,13 @@ pub fn police_locks_strings(tree: MutexGuard<ActionTree>, card_config: &CardConf
 
             let finder = generics.iter().find(|x| x.0 == generic_vec);
 
-            if finder.is_some() && finder.unwrap().2
+            if 
+                finder.is_some() && 
+                finder.unwrap().2 &&
+                (
+                    (finder.unwrap().3 == 49 && chance == 0) ||
+                    (finder.unwrap().3 == 48 && chance == 1)
+                )
             {
                 let generic_error = (generic_vec, error.1);
 
@@ -117,13 +124,11 @@ pub fn police_locks_strings(tree: MutexGuard<ActionTree>, card_config: &CardConf
 
     for error in &error_vec
     {
-        println!("{:?}", error);
-
         let mut new_string = "".to_owned();
 
         if error.0.len() == 0
         {
-            new_string += "ROOT";
+            new_string += "ROOT :";
         }
 
         for i in 0..error.0.len()
@@ -139,7 +144,7 @@ pub fn police_locks_strings(tree: MutexGuard<ActionTree>, card_config: &CardConf
                         "Unknown card id".to_owned()
                     }
                 },
-                Action::Generic => "Any card".to_owned(),
+                Action::Generic => "ANY CARD".to_owned(),
 
                 _ => error.0[i].to_action_string()
             };
@@ -147,6 +152,10 @@ pub fn police_locks_strings(tree: MutexGuard<ActionTree>, card_config: &CardConf
             if i < error.0.len() - 1
             {
                 text += " > ";
+            }
+            else
+            {
+                text += " :"
             }
 
             new_string += &text;
