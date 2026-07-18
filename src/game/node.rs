@@ -216,8 +216,6 @@ impl GameNode for PostFlopNode {
             return vec![] as Vec<f32>
         }
 
-        if self.mstorage_offset == 0 { println!("my_end_range: me: {:?}", self); }
-
         let mr_storage = unsafe { game.mrstorage.yoink() };
 
         if VERBOSE { println!("my_end_range: Initializing pointer getting sequence"); }
