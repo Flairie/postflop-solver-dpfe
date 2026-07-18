@@ -904,11 +904,6 @@ where
         }
 
         dead_hands[i] = is_dead;
-
-        if is_dead
-        {
-            println!("DEAD!");
-        }
     }
 
 
@@ -951,17 +946,16 @@ where
 
 
         let mut badsize = false;
-        let mut edit_history = vec![vec![]; cut_size] as Vec<Vec<(f32, f32)>>;
 
         for i in 0..cut_size
         {   
             let mut nodefreq = 0.0;
 
-            let mut max_locked_freq = 0.0;
-            let mut max_locked_ids = Vec::new() as Vec<usize>;
-
             let mut min_locked_freq = 0.0;
             let mut min_locked_ids = Vec::new() as Vec<usize>;
+
+            let mut max_locked_freq = 0.0;
+            let mut max_locked_ids = Vec::new() as Vec<usize>;
 
             if dead_hands[i]
             {
@@ -979,26 +973,26 @@ where
 
                 if llimit_owned[i + j * cut_size] == 0
                 {
-                    max_locked_freq += lrange_owned[i + j * cut_size];
-                    max_locked_ids.push(j);
-
                     min_locked_freq += lrange_owned[i + j * cut_size];
                     min_locked_ids.push(j);
+
+                    max_locked_freq += lrange_owned[i + j * cut_size];
+                    max_locked_ids.push(j);
                 }
                 else if llimit_owned[i + j * cut_size] == 1
                 {
                     if dst[i + j * cut_size] == lrange_owned[i + j * cut_size]
                     {
-                        max_locked_freq += lrange_owned[i + j * cut_size];
-                        max_locked_ids.push(j);
+                        min_locked_freq += lrange_owned[i + j * cut_size];
+                        min_locked_ids.push(j);
                     }
                 }
                 else
                 {
                     if dst[i + j * cut_size] == lrange_owned[i + j * cut_size]
                     {
-                        min_locked_freq += lrange_owned[i + j * cut_size];
-                        min_locked_ids.push(j);
+                        max_locked_freq += lrange_owned[i + j * cut_size];
+                        max_locked_ids.push(j);
                     }
                 }
             }
@@ -1010,20 +1004,18 @@ where
                 badsize = true;
 
                 if VERBOSE { std::thread::sleep(std::time::Duration::from_millis(25)); }
-                if VERBOSE { println!("{nodefreq}? This is some BAD size on {i}! Off to fix it! History? Of course it is {:?}, who could have thought?", edit_history[i]); }
+                if VERBOSE { println!("{nodefreq}? This is some BAD size on {i}! Off to fix it!"); }
 
                 if nodefreq > 1.0 // overdrive
                 {
-                    let multiplier = (1.0 - max_locked_freq) / (nodefreq - max_locked_freq);
+                    let multiplier = (1.0 - min_locked_freq) / (nodefreq - min_locked_freq);
                     if VERBOSE { println!("markiplier: {}", multiplier); }
-
-                    edit_history[i].push((nodefreq, multiplier));
 
                     for j in 0..node.num_actions()
                     {
                         let this_id = i + j * cut_size;
 
-                        if !max_locked_ids.contains(&j)
+                        if !min_locked_ids.contains(&j)
                         {
                             dst[this_id] *= multiplier;
 
@@ -1036,12 +1028,12 @@ where
                 }
                 else // underdrive
                 {
-                    if min_locked_freq > 1.0
+                    if max_locked_freq > 1.0
                     {
-                        panic!("Oookay, seriously? {min_locked_freq} as min frequency?! You went all that way just to underdrive to {min_locked_freq}?! Are you insane or just trolling me? This is just not acceptable! Please, for the love of God, fix your locking strategy! I am going to call the police and I am NOT bluffing! The app should have prevented this from even taking off, but you somehow managed to underdrive to {min_locked_freq}?! This is just outrageous! Please, please, please fix your locking strategy! This is just unbelievable!");
+                        panic!("Oookay, seriously? {max_locked_freq} as min frequency?! You went all that way just to underdrive to {max_locked_freq}?! Are you insane or just trolling me? This is just not acceptable! Please, for the love of God, fix your locking strategy! I am going to call the police and I am NOT bluffing! The app should have prevented this from even taking off, but you somehow managed to underdrive to {max_locked_freq}?! This is just outrageous! Please, please, please fix your locking strategy! This is just unbelievable!");
                     }
 
-                    if min_locked_freq == nodefreq // such a skill issue
+                    if max_locked_freq == nodefreq // such a skill issue
                     {
                         for j in 0..node.num_actions()
                         {
@@ -1053,16 +1045,14 @@ where
                         }
                     }
 
-                    let multiplier = (1.0 - min_locked_freq) / (nodefreq - min_locked_freq);
+                    let multiplier = (1.0 - max_locked_freq) / (nodefreq - max_locked_freq);
                     if VERBOSE { println!("markiplier: {}", multiplier); }
-
-                    edit_history[i].push((nodefreq, multiplier));
 
                     for j in 0..node.num_actions()
                     {
                         let this_id = i + j * cut_size;
 
-                        if !min_locked_ids.contains(&j)
+                        if !max_locked_ids.contains(&j)
                         {
                             dst[this_id] *= multiplier;
 
