@@ -118,8 +118,13 @@ pub fn police_locks_strings(tree: MutexGuard<ActionTree>, card_config: &CardConf
     for error in &error_vec
     {
         println!("{:?}", error);
-        
+
         let mut new_string = "".to_owned();
+
+        if error.0.len() == 0
+        {
+            new_string += "ROOT";
+        }
 
         for i in 0..error.0.len()
         {
@@ -229,11 +234,12 @@ impl PostFlopGame
                 {
                     underdrives -= 1;
                 }
+            }
 
-                if overdrives > 0 || underdrives > 0
-                {
-                    error_vec.push((history.clone(), [underdrives, overdrives]));
-                }
+
+            if overdrives > 0 || underdrives > 0
+            {
+                error_vec.push((history.clone(), [underdrives, overdrives]));
             }
         }
 
