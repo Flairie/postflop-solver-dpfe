@@ -192,6 +192,18 @@ pub fn police_locks(game: PostFlopGame) -> ErrorVec
 
 impl PostFlopGame
 {
+    fn verify_locks(
+        &self
+    ) -> ErrorVec
+    {
+        let history_base: Vec<Action> = vec![];
+        let error_vec: Vec<(Vec<Action>, [u16; 2])> = vec![];
+
+        let root = self.root();
+
+        self.verify_locks_recursive(root, &history_base, error_vec)
+    }
+
     fn verify_locks_recursive(
         &self, 
         node_mgl: MutexGuardLike<PostFlopNode>, 
