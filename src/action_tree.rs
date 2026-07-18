@@ -41,6 +41,9 @@ pub enum Action {
 
     /// Chance action with a card ID, i.e., the dealing of a turn or river card.
     Chance(Card),
+
+    // Generic action used in some parsers
+    Generic
 }
 
 /// Rules for rulelocking
@@ -484,10 +487,6 @@ impl ActionTree {
 
         let current_node: MutexGuardLike<ActionTreeNode>;
         current_node = if node.is_some() { node.unwrap().lock() } else { self.root.lock() };
-
-        println!("{:?}", index);
-        println!("{:?}", current_node.actions);
-        println!("{:?}", current_node.children);
         
         
         if vine.len() == 0
@@ -792,7 +791,6 @@ impl ActionTree {
     pub fn pull_range_lock_from_current_node(&self) ->  (Option<Vec<f32>>, Option<Vec<i8>>) 
     {
         let history = self.history.clone();
-        println!("{:?}", history);
         self.pull_range_lock_recursive(&history, 0, None)
     }
 
@@ -1456,6 +1454,40 @@ impl ActionTree {
         let index = search_result.unwrap();
         let next_info = info.create_next(node.player, action);
         self.total_bet_amount_recursive(&node.children[index].lock(), &line[1..], next_info)
+    }
+}
+
+impl Clone for ActionTreeNode {
+    fn clone(&self) -> Self {
+        let mut new_node = ActionTreeNode::default();
+
+        new_node.player = self.player;
+        new_node.board_state = self.board_state;
+        new_node.amount = self.amount;
+        new_node.actions = self.actions.clone();
+        new_node.children = vec![];
+
+        for child in &self.children
+        {
+            new_node.children.push(unsafe { MutexLike::new(child.yoink().clone()) });
+        }
+
+        new_node
+    }
+}
+
+impl Clone for ActionTree {
+    fn clone(&self) -> Self {
+        let new_config = self.config.clone();
+
+        let mut new_tree = ActionTree::new(new_config).unwrap();
+
+        new_tree.added_lines = self.added_lines.clone();
+        new_tree.removed_lines = self.removed_lines.clone();
+        new_tree.locked_lines = MutexLike::new(unsafe {self.locked_lines.yoink().clone()});
+        new_tree.root = Box::new(MutexLike::new(unsafe { self.root.yoink().clone() }));
+
+        new_tree
     }
 }
 
