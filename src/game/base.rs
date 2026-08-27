@@ -771,7 +771,7 @@ impl PostFlopGame {
             }
         }
 
-        let lock_number = self.mrstorage.yoink().len();
+        let lock_number = self.rhashes.yoink().len();
         println!("locking: lock number: {:?}", lock_number);
         
         if lock_number == 1
