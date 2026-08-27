@@ -73,6 +73,10 @@ pub trait Game: Send + Sync {
         false
     }
 
+    /// returns if the game is locking
+    #[doc(hidden)]
+    fn is_locking_enabled(&self) -> bool;
+
     /// Cuts out nodelocking unused cards for postflopgame.
     #[doc(hidden)]
     fn cut_them_locks<T>(&self, locks: Vec<T>, player: usize) -> Vec<T> where T: Copy;

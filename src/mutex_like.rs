@@ -57,8 +57,8 @@ impl<T> MutexLike<T> {
 
     // allows to get immutable data from a mutexlike without ugly lock deref sequence
     #[inline]
-    pub unsafe fn yoink<'a>(&self) -> &T { 
-        &(*self.data.get())
+    pub fn yoink<'a>(&self) -> &T { 
+        unsafe { &(*self.data.get()) }
     }
 
 }

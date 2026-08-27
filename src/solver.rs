@@ -268,7 +268,10 @@ where
         };
 
         // node-locking
-        apply_locking_strategy::<T>(&mut strategy, node, game);
+        if game.is_locking_enabled()
+        {
+            apply_locking_strategy::<T>(&mut strategy, node, game);
+        }
 
         // sum up the counterfactual values
         let mut cfv_actions = cfv_actions.lock();
@@ -354,8 +357,11 @@ where
         } else {
             regret_matching(node.regrets(), num_actions)
         };
-
-        apply_locking_strategy::<T>(&mut cfreach_actions, node, game);
+        
+        if game.is_locking_enabled()
+        {
+            apply_locking_strategy::<T>(&mut cfreach_actions, node, game);
+        }
 
         // update the reach probabilities
         let row_size = cfreach.len();
