@@ -111,6 +111,12 @@ impl Game for PostFlopGame {
         self.is_compression_enabled
     }
 
+
+    #[inline]
+    fn is_locking_enabled(&self) -> bool {
+        self.is_locking.yoink().clone()
+    }
+
     
     fn cut_them_locks<T>(&self, locks: Vec<T>, player: usize) -> Vec<T> 
     where
@@ -667,10 +673,10 @@ impl PostFlopGame {
         memory_usage += vec_memory_usage(&self.isomorphism_card_turn);
         memory_usage += vec_memory_usage(&self.isomorphism_ref_river);
 
-        memory_usage += vec_memory_usage(unsafe {self.rstorage.yoink()});
-        memory_usage += vec_memory_usage(unsafe {self.lstorage.yoink()});
-        memory_usage += vec_memory_usage(unsafe {self.mrstorage.yoink()});
-        memory_usage += vec_memory_usage(unsafe {self.mlstorage.yoink()});
+        memory_usage += vec_memory_usage(self.rstorage.yoink());
+        memory_usage += vec_memory_usage(self.lstorage.yoink());
+        memory_usage += vec_memory_usage(self.mrstorage.yoink());
+        memory_usage += vec_memory_usage(self.mlstorage.yoink());
 
         for refs in &self.isomorphism_ref_river {
             memory_usage += vec_memory_usage(refs);
@@ -752,7 +758,7 @@ impl PostFlopGame {
     {
         const VERBOSE: bool = false;
 
-        if VERBOSE { println!("lock_them_nodes: me: {:?}", unsafe { self.mrstorage.yoink() }); }
+        if VERBOSE { println!("lock_them_nodes: me: {:?}", self.mrstorage.yoink()); }
 
         for node_id in 0..self.node_arena.len()
         {
@@ -765,14 +771,38 @@ impl PostFlopGame {
             }
         }
 
-        if VERBOSE { println!("lock_them_nodes: me: {:?}", unsafe { self.mrstorage.yoink() }); }
+        let lock_number = self.mrstorage.yoink().len();
+        
+        if lock_number == 1
+        {
+            let only_range = self.root().my_end_range(self);
+            let only_limit = self.root().my_end_limit(self);
+
+            if only_range == BLANK_NLR && only_limit == BLANK_NLL
+            {
+                let mut mode = self.is_locking.lock();
+                *mode = false;
+            }
+            else
+            {
+                let mut mode = self.is_locking.lock();
+                *mode = true;
+            }
+        }
+        else
+        {
+            let mut mode = self.is_locking.lock();
+            *mode = true;
+        }
+
+        if VERBOSE { println!("lock_them_nodes: me: {:?}", self.mrstorage.yoink()); }
 
         if VERBOSE { println!("lock_them_nodes: NODELOCKING DATA"); }
 
-        if VERBOSE { println!("lock_them_nodes: {}", unsafe { self.mrstorage.yoink().len() }); }
-        if VERBOSE { println!("lock_them_nodes: {}", unsafe { self.rstorage.yoink().len() }); }
+        if VERBOSE { println!("lock_them_nodes: {}", self.mrstorage.yoink().len()); }
+        if VERBOSE { println!("lock_them_nodes: {}", self.rstorage.yoink().len()); }
 
-        if VERBOSE { println!("lock_them_nodes: {:?}", unsafe { self.rstorage.yoink() }); }
+        if VERBOSE { println!("lock_them_nodes: {:?}", self.rstorage.yoink()); }
     }
 
     /// Pushes the chance actions to the `node`.

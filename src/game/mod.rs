@@ -81,6 +81,8 @@ pub struct PostFlopGame {
     bunching_coef_flop: [Vec<usize>; 2],
     bunching_coef_turn: [Vec<Vec<usize>>; 2],
 
+    is_locking: MutexLike<bool>,
+
     // store options
     storage_mode: BoardState,
     target_storage_mode: BoardState,

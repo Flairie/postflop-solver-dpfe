@@ -216,7 +216,7 @@ impl GameNode for PostFlopNode {
             return vec![] as Vec<f32>
         }
 
-        let mr_storage = unsafe { game.mrstorage.yoink() };
+        let mr_storage = game.mrstorage.yoink();
 
         if VERBOSE { println!("my_end_range: Initializing pointer getting sequence"); }
         if VERBOSE { println!("my_end_range: offset for mr_storage: {}", self.mstorage_offset); }
@@ -267,7 +267,7 @@ impl GameNode for PostFlopNode {
             return vec![] as Vec<i8>
         }
 
-        let ml_storage = unsafe { game.mlstorage.yoink() };
+        let ml_storage = game.mlstorage.yoink();
 
         if VERBOSE { println!("my_end_limit: Initializing pointer getting sequence"); }
         if VERBOSE { println!("my_end_limit: offset for mr_storage: {}", self.mstorage_offset); }
