@@ -788,6 +788,8 @@ impl PostFlopGame {
                 let mut mode = self.is_locking.lock();
                 *mode = true;
             }
+
+            println!("locking: is locking: {:?}", self.is_locking_enabled());
         }
         else
         {
