@@ -773,15 +773,13 @@ impl PostFlopGame {
 
         let lock_number = self.rhashes.yoink().len();
         println!("locking: lock number: {:?}", lock_number);
-        println!("rhash: {:?}", self.rhashes.yoink()[0]);
-        println!("lhash: {:?}", self.lhashes.yoink()[0]);
         
         if lock_number == 1
         {
-            let only_range = self.root().my_end_range(self);
-            let only_limit = self.root().my_end_limit(self);
+            let only_range_hash = self.rhashes.yoink()[0].0;
+            let only_limit_hash = self.lhashes.yoink()[0].0;
 
-            if only_range == BLANK_NLR && only_limit == BLANK_NLL
+            if only_range_hash == 15354743120092682439 && only_limit_hash == 10153457565148690918
             {
                 let mut mode = self.is_locking.lock();
                 *mode = false;
