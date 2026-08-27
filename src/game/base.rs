@@ -772,6 +772,7 @@ impl PostFlopGame {
         }
 
         let lock_number = self.mrstorage.yoink().len();
+        println!("locking: lock number: {:?}", lock_number);
         
         if lock_number == 1
         {
@@ -795,6 +796,8 @@ impl PostFlopGame {
         {
             let mut mode = self.is_locking.lock();
             *mode = true;
+
+            println!("locking: is locking: {:?}", self.is_locking_enabled());
         }
 
         if VERBOSE { println!("lock_them_nodes: me: {:?}", self.mrstorage.yoink()); }
