@@ -251,11 +251,17 @@ where
             );
         });
 
-        let mut end_range_owned = node.my_end_range(game);
-        let mut end_limit_owned = node.my_end_limit(game);
+        let mut end_range_owned: Vec<f32> = Vec::new();
+        let mut end_limit_owned: Vec<i8> = Vec::new();
 
-        end_range_owned = game.cut_them_locks(end_range_owned, player);
-        end_limit_owned = game.cut_them_locks(end_limit_owned, player);
+        if game.is_locking_enabled()
+        {
+            end_range_owned = node.my_end_range(game);
+            end_limit_owned = node.my_end_limit(game);
+
+            end_range_owned = game.cut_them_locks(end_range_owned, player);
+            end_limit_owned = game.cut_them_locks(end_limit_owned, player);
+        }
         
         let mut end_range: &mut [f32] = &mut end_range_owned;
         let mut end_limit: &mut [i8] = &mut end_limit_owned;
@@ -288,7 +294,7 @@ where
                 *x += (*y as f32) * decoder;
             });
 
-            if end_range != BLANK_NLR || end_limit != BLANK_NLL {
+            if game.is_locking_enabled() && (end_range != BLANK_NLR || end_limit != BLANK_NLL) {
                 strategy.iter_mut().zip(end_range).zip(end_limit).map(|((d, r), l)| (d, r, l)).for_each(|(d, r, l)| {
                     if !(*l == 1 && *r == 0.0)
                     {
@@ -318,7 +324,7 @@ where
                 sub_slice(row, result);
             });
 
-            if end_range != BLANK_NLR || end_limit != BLANK_NLL {
+            if game.is_locking_enabled() && (end_range != BLANK_NLR || end_limit != BLANK_NLL) {
                 cfv_actions.iter_mut().zip(end_range).zip(end_limit).map(|((d, r), l)| (d, r, l)).for_each(|(d, r, l)| {
                     if !(*l == 1 && *r == 0.0)
                     {
