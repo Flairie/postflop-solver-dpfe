@@ -618,6 +618,8 @@ impl PostFlopGame {
         self.lstorage = MutexLike::new(Vec::new());
         self.mrstorage = MutexLike::new(Vec::new());
         self.mlstorage = MutexLike::new(Vec::new());
+        self.rhashes = MutexLike::new(Vec::new());
+        self.lhashes = MutexLike::new(Vec::new());
     }
 
     /// Counts the number of nodes in the game tree.
