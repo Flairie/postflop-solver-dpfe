@@ -773,8 +773,8 @@ impl PostFlopGame {
 
         let lock_number = self.rhashes.yoink().len();
         println!("locking: lock number: {:?}", lock_number);
-        println!("rhash: {:?}", self.rhashes[0]);
-        println!("lhash: {:?}", self.lhashes[0]);
+        println!("rhash: {:?}", self.rhashes.yoink()[0]);
+        println!("lhash: {:?}", self.lhashes.yoink()[0]);
         
         if lock_number == 1
         {
